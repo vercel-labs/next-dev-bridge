@@ -194,9 +194,9 @@ function printHumanEvent(event, args) {
       return
     case 'build:error':
       log(
-        `>>> [ERROR] count=${event.formattedErrorCount ?? event.errorCount} hash=${event.hash || 'n/a'} change=${event.change}`
+        `>>> [ERROR] count=${event.errors.length} hash=${event.hash || 'n/a'} change=${event.change}`
       )
-      printErrors(event.formattedErrors || event.errors || [])
+      printErrors(event.errors)
       return
     case 'session:reconnect-abandoned':
       log(`>>> [RECONNECT ABANDONED] attempts=${event.attempts}`)
@@ -211,7 +211,7 @@ function printHumanEvent(event, args) {
 function formatBuildReady(label, event) {
   const parts = [`>>> [${label}]`]
   parts.push(`hash=${event.hash || 'n/a'}`)
-  parts.push(`warnings=${event.formattedWarningCount ?? event.warningCount}`)
+  parts.push(`warnings=${event.warnings.length}`)
   if (event.trigger === 'sync') {
     parts.push('state=sync')
   }

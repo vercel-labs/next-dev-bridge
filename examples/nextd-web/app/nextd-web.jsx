@@ -163,7 +163,7 @@ export function NextdWeb() {
       setHmrEvents((events) => appendHmrEvent(events, formatHmrEvent(event)))
 
       if (event.type === 'build:error' && !suppressBuildErrorsRef.current) {
-        setBuildErrors(event.formattedErrors || event.errors || [])
+        setBuildErrors(event.errors || [])
       }
 
       if (event.type === 'build:ready' || event.type === 'build:recovered') {
@@ -506,11 +506,11 @@ function formatHmrEvent(event) {
   }
 
   if (event.type === 'build:error') {
-    return `[ERROR] count=${event.formattedErrorCount} hash=${event.hash || 'n/a'}`
+    return `[ERROR] count=${event.errors.length} hash=${event.hash || 'n/a'}`
   }
 
   if (event.type === 'build:ready' || event.type === 'build:recovered') {
-    return `[${event.type === 'build:recovered' ? 'RECOVERED' : 'READY'}] hash=${event.hash || 'n/a'} warnings=${event.formattedWarningCount}`
+    return `[${event.type === 'build:recovered' ? 'RECOVERED' : 'READY'}] hash=${event.hash || 'n/a'} warnings=${event.warnings.length}`
   }
 
   if (event.type === 'build:compiling') {

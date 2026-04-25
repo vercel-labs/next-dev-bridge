@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-'use strict'
 
-const fs = require('node:fs')
-const path = require('node:path')
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const TEST_APP_ROOT = path.join(__dirname, 'next-app')
 const BUILD_SUBJECT_FILE = path.join(
@@ -443,14 +446,14 @@ Examples:
 `)
 }
 
-if (require.main === module) {
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   runCli(process.argv.slice(2)).catch((error) => {
     console.error(error.stack || error.message)
     process.exitCode = 1
   })
 }
 
-module.exports = {
+export {
   BUILD_SUBJECT_FILE,
   RUNTIME_EFFECT_FILE,
   RUNTIME_MODE_FILE,

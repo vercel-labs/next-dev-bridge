@@ -17,8 +17,6 @@ export interface NextdState {
   buildCycle: number
   hasErrors: boolean
   hash: string | null
-  errorCount: number
-  warningCount: number
   errors: string[]
   warnings: string[]
   rawErrors: unknown[]
@@ -60,8 +58,6 @@ interface BuildErrorEvent extends BuildSettledEvent {
   type: 'build:error'
   status: 'error'
   change: 'shown' | 'updated' | 'unchanged'
-  errors: string[]
-  formattedErrors: string[]
   firstError: string | null
 }
 
@@ -69,14 +65,8 @@ interface BuildSettledEvent {
   trigger: 'sync' | 'update' | 'server'
   internalType: string
   hash?: string | null
-  errorCount: number
-  hmrErrorCount: number
-  formattedErrorCount: number
-  warningCount: number
-  hmrWarningCount: number
-  formattedWarningCount: number
+  errors: string[]
   warnings: string[]
-  formattedWarnings: string[]
 }
 
 interface InternalHmrMessageEvent {
@@ -206,7 +196,6 @@ function reduceHmrMessage(
 
       state.building = false
       state.hash = typeof message.hash === 'string' ? message.hash : state.hash
-      state.warningCount = formatted.warnings.length
       state.warnings = formatted.warnings
       state.rawWarnings = rawWarnings
       state.lastChangedAt = timestamp(options)
@@ -222,7 +211,6 @@ function reduceHmrMessage(
 
         state.phase = 'error'
         state.hasErrors = true
-        state.errorCount = formatted.errors.length
         state.errors = formatted.errors
         state.rawErrors = rawErrors
         state.firstError = formatted.errors[0] || null
@@ -234,16 +222,8 @@ function reduceHmrMessage(
           trigger: messageType === HMR_TYPES.SYNC ? 'sync' : 'update',
           internalType: messageType,
           hash: state.hash,
-          errorCount: state.errorCount,
-          hmrErrorCount: rawErrors.length,
-          formattedErrorCount: formatted.errors.length,
-          warningCount: state.warningCount,
-          hmrWarningCount: rawWarnings.length,
-          formattedWarningCount: formatted.warnings.length,
-          warnings: state.warnings,
-          formattedWarnings: state.warnings,
           errors: state.errors,
-          formattedErrors: state.errors,
+          warnings: state.warnings,
           firstError: state.firstError,
         })
         return
@@ -252,7 +232,6 @@ function reduceHmrMessage(
       const hadErrors = state.hasErrors
       state.phase = 'ok'
       state.hasErrors = false
-      state.errorCount = 0
       state.errors = []
       state.rawErrors = []
       state.firstError = null
@@ -263,14 +242,8 @@ function reduceHmrMessage(
         trigger: messageType === HMR_TYPES.SYNC ? 'sync' : 'update',
         internalType: messageType,
         hash: state.hash,
-        errorCount: 0,
-        hmrErrorCount: 0,
-        formattedErrorCount: 0,
-        warningCount: state.warningCount,
-        hmrWarningCount: rawWarnings.length,
-        formattedWarningCount: formatted.warnings.length,
+        errors: state.errors,
         warnings: state.warnings,
-        formattedWarnings: state.warnings,
       })
       return
     }
@@ -285,8 +258,6 @@ function reduceHmrMessage(
       state.phase = 'error'
       state.building = false
       state.hasErrors = true
-      state.errorCount = formatted.errors.length
-      state.warningCount = 0
       state.errors = formatted.errors
       state.warnings = []
       state.rawErrors = [rawError]
@@ -300,16 +271,8 @@ function reduceHmrMessage(
         change: hadErrors ? 'updated' : 'shown',
         trigger: 'server',
         internalType: messageType,
-        errorCount: state.errorCount,
-        hmrErrorCount: 1,
-        formattedErrorCount: formatted.errors.length,
-        warningCount: 0,
-        hmrWarningCount: 0,
-        formattedWarningCount: 0,
-        warnings: [],
-        formattedWarnings: [],
         errors: state.errors,
-        formattedErrors: state.errors,
+        warnings: [],
         firstError: state.firstError,
       })
       return
@@ -340,8 +303,6 @@ function createInitialState(): NextdState {
     buildCycle: 0,
     hasErrors: false,
     hash: null,
-    errorCount: 0,
-    warningCount: 0,
     errors: [],
     warnings: [],
     rawErrors: [],

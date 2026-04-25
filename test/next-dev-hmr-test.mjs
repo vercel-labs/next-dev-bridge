@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-'use strict'
 
-const fs = require('node:fs')
-const http = require('node:http')
-const os = require('node:os')
-const path = require('node:path')
-const { spawn } = require('node:child_process')
-const { connect } = require('../src/index.ts')
-const { applyScenario } = require('./next-app-scenarios.cjs')
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import http from 'node:http'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
+import { connect } from '../src/index.ts'
+import { applyScenario } from './next-app-scenarios.mjs'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
 const TEST_APP_ROOT = path.join(__dirname, 'next-app')
 const PORT = Number(process.env.PORT || 3100)
@@ -279,7 +281,7 @@ async function runBuildErrorFlow(context) {
   const shown = context.waitForObserved(
     (event) =>
       isErrorEvent(event) &&
-      event.formattedErrors.some((error) =>
+      event.errors.some((error) =>
         error.includes('Expression expected')
       ),
     'syntax HMR error',
@@ -297,7 +299,7 @@ async function runBuildErrorFlow(context) {
   const updated = context.waitForObserved(
     (event) =>
       isErrorEvent(event) &&
-      event.formattedErrors.some((error) =>
+      event.errors.some((error) =>
         error.includes('Export buildErrorMessage')
       ),
     'missing export HMR error',
@@ -320,9 +322,9 @@ async function runBuildErrorFlow(context) {
   applyLoggedScenario('build:recover')
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
   const clearedEvent = await cleared
-  if (clearedEvent.hmrErrorCount !== 0) {
+  if (clearedEvent.errors.length !== 0) {
     throw new Error(
-      `Expected recovered HMR error count to be 0, got ${clearedEvent.hmrErrorCount}`
+      `Expected recovered error array to be empty, got ${clearedEvent.errors.length}`
     )
   }
 }
@@ -338,24 +340,24 @@ function logObservedEvent(event) {
 
   if (event.type === 'build:ready') {
     console.log(
-      `>>> [READY] trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} warnings=${event.hmrWarningCount}`
+      `>>> [READY] trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} warnings=${event.warnings.length}`
     )
   }
 
   if (event.type === 'build:error') {
     logSpecial(
       'BUILD ERROR',
-      `count=${event.hmrErrorCount} formatted=${event.formattedErrorCount} trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} change=${event.change}`
+      `count=${event.errors.length} trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} change=${event.change}`
     )
-    for (let index = 0; index < event.formattedErrors.length; index += 1) {
-      console.log(indent(`error ${index + 1}:\n${event.formattedErrors[index]}`, '  '))
+    for (let index = 0; index < event.errors.length; index += 1) {
+      console.log(indent(`error ${index + 1}:\n${event.errors[index]}`, '  '))
     }
   }
 
   if (event.type === 'build:recovered') {
     logSpecial(
       'BUILD RECOVERED',
-      `count=${event.hmrErrorCount} trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} warnings=${event.hmrWarningCount}`
+      `count=${event.errors.length} trigger=${event.trigger}${event.hash ? ` hash=${event.hash}` : ''} warnings=${event.warnings.length}`
     )
   }
 }
@@ -412,14 +414,11 @@ function assertRuntimeErrorCategories(events) {
 }
 
 function assertFormattedErrors(event, label) {
-  if (!event.hmrErrorCount || event.hmrErrorCount < 1) {
-    throw new Error(`Expected at least one raw HMR error for ${label}`)
+  if (!event.errors || event.errors.length < 1) {
+    throw new Error(`Expected at least one error for ${label}`)
   }
-  if (!event.formattedErrorCount || event.formattedErrorCount < 1) {
-    throw new Error(`Expected at least one formatted HMR error for ${label}`)
-  }
-  if (!event.formattedErrors || !event.formattedErrors[0]) {
-    throw new Error(`Expected formatted error text for ${label}`)
+  if (!event.errors[0]) {
+    throw new Error(`Expected error text for ${label}`)
   }
 }
 

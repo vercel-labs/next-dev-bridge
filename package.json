@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "docs",
     "README.md"
   ],
   "packageManager": "bun@1.1.30",
@@ -32,10 +33,11 @@
     "build": "tsc -p tsconfig.json",
     "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
     "example:web": "bun run build && bun examples/nextd-web/run.cjs",
-    "scenario": "bun test/next-app-scenarios.cjs",
+    "scenario": "bun test/next-app-scenarios.mjs",
     "test:app": "bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
     "prepack": "tsc -p tsconfig.json",
-    "test": "bun test/next-dev-hmr-test.cjs"
+    "test:unit": "vitest run test/process-hmr.test.ts",
+    "test": "bun test/run-tests.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -45,7 +47,8 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   },
   "license": "MIT"
 }
