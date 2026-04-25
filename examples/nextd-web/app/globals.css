@@ -1,0 +1,722 @@
+:root {
+  --ink: #17201a;
+  --muted: #596459;
+  --paper: #f7f1e3;
+  --paper-strong: #fffaf0;
+  --line: rgba(23, 32, 26, 0.14);
+  --green: #1f6f52;
+  --gold: #c9851c;
+  --rust: #9e3f2f;
+  --brutal-ink: #090909;
+  --brutal-paper: #f5f0e6;
+  --brutal-muted: #5a554c;
+  --brutal-line: #090909;
+  --shadow: 0 24px 80px rgba(23, 32, 26, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(201, 133, 28, 0.2), transparent 34rem),
+    radial-gradient(circle at 84% 18%, rgba(31, 111, 82, 0.18), transparent 30rem),
+    linear-gradient(135deg, #fff8e7 0%, #f3ead4 48%, #e9e1cb 100%);
+  color: var(--ink);
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+code {
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: rgba(255, 250, 240, 0.72);
+  padding: 0.12rem 0.34rem;
+  font-family: "SFMono-Regular", "Cascadia Code", monospace;
+  font-size: 0.92em;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1,
+h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: -0.055em;
+}
+
+h1 {
+  max-width: 780px;
+  margin-bottom: 20px;
+  font-size: clamp(3rem, 8vw, 6.2rem);
+  line-height: 0.9;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 0.96;
+}
+
+h3 {
+  margin-bottom: 10px;
+  font-size: 1rem;
+}
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 56px 0;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: rgba(255, 250, 240, 0.74);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  backdrop-filter: blur(20px);
+}
+
+.eyebrow,
+.kicker {
+  margin: 0 0 14px;
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.lede,
+.panel p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.backLink {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 250, 240, 0.8);
+  padding: 0.75rem 1rem;
+  color: var(--green);
+  font-weight: 800;
+}
+
+.panelGrid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+
+.statusPill {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgba(31, 111, 82, 0.1);
+  padding: 0.5rem 0.75rem;
+  color: var(--green);
+  font-weight: 800;
+}
+
+.dangerPill {
+  background: rgba(158, 63, 47, 0.12);
+  color: var(--rust);
+}
+
+.runtimeMeter {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.meterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.webDemoShell {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(560px, 1.28fr);
+  gap: 12px;
+  min-height: 100vh;
+  padding: 12px;
+  color: var(--brutal-ink);
+  font-family: "SFMono-Regular", "Cascadia Code", "Menlo", monospace;
+}
+
+.webDemoShell *,
+.webDemoShell *::before,
+.webDemoShell *::after {
+  border-radius: 0 !important;
+}
+
+.webDemoShell h1,
+.webDemoShell h2,
+.webDemoShell h3 {
+  font-family: inherit;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.webDemoShell .eyebrow {
+  color: var(--brutal-ink);
+  letter-spacing: 0.2em;
+}
+
+.editWorkbench,
+.previewWorkbench,
+.errorInspector {
+  border: 1px solid var(--brutal-line);
+  background: var(--brutal-paper);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.editWorkbench {
+  display: grid;
+  grid-template-rows: auto auto auto auto auto minmax(320px, 1fr) auto;
+  gap: 8px;
+  height: calc(100vh - 24px);
+  min-height: 680px;
+  padding: 10px;
+}
+
+.workbenchHeader h1 {
+  margin-bottom: 8px;
+  font-size: clamp(2rem, 4vw, 4.2rem);
+  line-height: 0.86;
+}
+
+.workbenchHeader p:last-child {
+  margin-bottom: 0;
+  color: var(--brutal-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.controlOrigin {
+  margin-top: 10px;
+  font-size: 0.88rem;
+}
+
+.scenarioSelectLabel {
+  display: grid;
+  gap: 6px;
+  color: var(--brutal-ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scenarioSelect {
+  width: 100%;
+  border: 1px solid var(--brutal-line);
+  outline: none;
+  background: #fffdf6;
+  padding: 0.68rem 0.72rem;
+  color: var(--brutal-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.scenarioSelect:focus {
+  box-shadow: 4px 4px 0 var(--brutal-line);
+}
+
+.scenarioDescription {
+  margin: 0;
+  border: 1px solid var(--brutal-line);
+  background: #e9dfcf;
+  padding: 0.55rem 0.65rem;
+  color: var(--brutal-ink);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.previewRouteControl {
+  display: grid;
+  gap: 6px;
+  color: var(--brutal-ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.scenarioRail {
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.scenarioButton,
+.routeButton,
+.primaryAction,
+.secondaryAction {
+  appearance: none;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.scenarioButton {
+  display: grid;
+  gap: 4px;
+  border-radius: 18px;
+  background: rgba(255, 250, 240, 0.7);
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.scenarioButton span {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.scenarioButton small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.scenarioButtonActive {
+  border-color: rgba(31, 111, 82, 0.45);
+  background: rgba(31, 111, 82, 0.1);
+}
+
+.editLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--brutal-ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.editLabel code {
+  background: transparent;
+  border-color: var(--brutal-line);
+  color: var(--brutal-ink);
+}
+
+.editTextarea {
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 1px solid var(--brutal-line);
+  outline: none;
+  background: #fffdf6;
+  padding: 10px;
+  color: var(--brutal-ink);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.editTextarea:focus {
+  box-shadow: 4px 4px 0 var(--brutal-line);
+}
+
+.editActions,
+.inspectorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editActions {
+  gap: 8px;
+}
+
+.actionButtons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.primaryAction,
+.secondaryAction,
+.routeButton {
+  padding: 0.46rem 0.56rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.primaryAction {
+  border-color: var(--brutal-line);
+  background: var(--brutal-ink);
+  color: var(--brutal-paper);
+}
+
+.secondaryAction,
+.routeButton {
+  border-color: var(--brutal-line);
+  background: #fffdf6;
+  color: var(--brutal-ink);
+}
+
+.actionStatus {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--brutal-muted);
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.previewWorkbench {
+  display: grid;
+  grid-template-rows: minmax(0, 2.18fr) minmax(180px, 0.82fr);
+  row-gap: 12px;
+  column-gap: 0;
+  height: calc(100vh - 24px);
+  min-height: 680px;
+  border-color: rgba(23, 32, 26, 0.28);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(242, 201, 118, 0.22), transparent 18rem),
+    linear-gradient(155deg, rgba(18, 31, 28, 0.94), rgba(39, 58, 48, 0.88));
+  padding: 12px 0;
+  color: #fff8e7;
+}
+
+.previewToolbar {
+  display: none;
+}
+
+.previewToolbar strong {
+  color: #fff8e7;
+  font-family: "SFMono-Regular", "Cascadia Code", monospace;
+  font-size: 0.86rem;
+}
+
+.previewToolbar .eyebrow {
+  color: #f2c976;
+}
+
+.previewToolbar .eyebrow,
+.inspectorHeader .eyebrow {
+  margin-bottom: 4px;
+}
+
+.routeButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.routeButtonActive {
+  border-color: rgba(242, 201, 118, 0.55);
+  background: rgba(242, 201, 118, 0.16);
+  color: #fff8e7;
+}
+
+.previewFrameWrap {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  margin-top: 6px;
+  border-block: 1px solid rgba(255, 248, 231, 0.24);
+  border-inline: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 248, 231, 0.1), rgba(255, 248, 231, 0)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 248, 231, 0.06),
+      rgba(255, 248, 231, 0.06) 8px,
+      transparent 8px,
+      transparent 18px
+    );
+  padding: 30px 0 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 231, 0.16),
+    0 28px 90px rgba(0, 0, 0, 0.28);
+}
+
+.previewFrameWrap::before {
+  content: "separate Next preview app";
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  color: rgba(255, 248, 231, 0.72);
+  font-family: "SFMono-Regular", "Cascadia Code", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.previewFrame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fffaf0;
+}
+
+.errorInspector {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+  min-height: 0;
+  margin: 0 12px;
+  padding: 6px;
+  color: var(--brutal-ink);
+  box-shadow: none;
+}
+
+.inspectorHeader {
+  min-height: 0;
+}
+
+.inspectorHeader strong {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overlayPositionControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brutal-muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overlayPositionButtons {
+  display: inline-flex;
+  border: 1px solid var(--brutal-line);
+}
+
+.overlayPositionButton {
+  appearance: none;
+  border: 1px solid var(--brutal-line);
+  border-width: 0 0 0 1px;
+  background: #fffdf6;
+  color: var(--brutal-ink);
+  cursor: pointer;
+  padding: 0.24rem 0.36rem;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  outline: none;
+  text-transform: uppercase;
+}
+
+.overlayPositionButton:first-child {
+  border-left-width: 0;
+}
+
+.overlayPositionButtonActive {
+  background: var(--brutal-ink);
+  color: var(--brutal-paper);
+}
+
+.overlayPositionButton:focus-visible {
+  box-shadow: inset 0 0 0 2px #f2c976;
+}
+
+.okBadge,
+.errorBadge {
+  border: 1px solid var(--brutal-line);
+  padding: 0.26rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.okBadge {
+  background: #d7f2d4;
+  color: var(--brutal-ink);
+}
+
+.errorBadge {
+  background: #ffb7a7;
+  color: var(--brutal-ink);
+}
+
+.errorScroll {
+  overflow: auto;
+  min-height: 0;
+}
+
+.errorBlock,
+.emptyErrors,
+.hmrFeed {
+  border: 1px solid var(--brutal-line);
+  background: #0b0b0b;
+  color: #fffdf6;
+}
+
+.errorBlock {
+  margin: 0 0 6px;
+  padding: 7px;
+  white-space: pre-wrap;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.previewErrorOverlay {
+  position: absolute;
+  z-index: 3;
+  overflow: auto;
+  border: 1px solid var(--brutal-line);
+  background: rgba(245, 240, 230, 0.94);
+  padding: 8px;
+  box-shadow: 6px 6px 0 rgba(9, 9, 9, 0.34);
+}
+
+.previewErrorOverlay .errorBlock {
+  margin: 0 0 6px;
+}
+
+.previewErrorOverlay .errorBlock:last-child {
+  margin-bottom: 0;
+}
+
+.previewErrorOverlayCenter {
+  top: 50%;
+  left: 50%;
+  width: min(76%, 760px);
+  max-height: 72%;
+  transform: translate(-50%, -50%);
+}
+
+.previewErrorOverlayCorner {
+  bottom: 12px;
+  left: 12px;
+  width: min(58%, 520px);
+  max-height: 48%;
+}
+
+.runtimeBlock {
+  background: #290b06;
+}
+
+.emptyErrors {
+  padding: 7px;
+  background: #fffdf6;
+  color: var(--brutal-ink);
+  font-size: 0.72rem;
+}
+
+.hmrFeed {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 6px;
+  background: #fffdf6;
+  color: var(--brutal-muted);
+  font-size: 0.64rem;
+}
+
+.hmrFeedLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+nextjs-portal,
+nextjs-toast,
+nextjs-static-indicator-toast-wrapper,
+nextjs-dev-tools-indicator,
+script[data-nextjs-dev-overlay],
+#data-devtools-indicator,
+#panel-route,
+.dev-tools-indicator-menu,
+.dev-tools-indicator-inner,
+.dev-tools-indicator-item,
+[data-nextjs-toast],
+[data-nextjs-dialog],
+[data-nextjs-dialog-overlay],
+[data-nextjs-error-overlay],
+[data-nextjs-dev-tools-button],
+[data-nextjs-dev-overlay],
+[data-nextjs-build-indicator],
+[data-nextjs-route-type],
+[data-segment-explorer],
+#__next-build-watcher,
+#__next-prerender-indicator {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 760px) {
+  .panelGrid,
+  .webDemoShell {
+    grid-template-columns: 1fr;
+  }
+
+  .webDemoShell {
+    padding: 10px;
+  }
+
+  .editWorkbench,
+  .previewWorkbench {
+    height: auto;
+    min-height: 0;
+  }
+
+  .previewWorkbench {
+    grid-template-rows: auto 58vh 34vh;
+  }
+
+  .editActions,
+  .previewToolbar,
+  .inspectorHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pageHeader {
+    display: block;
+  }
+
+  .backLink {
+    display: inline-flex;
+    margin-top: 18px;
+  }
+}

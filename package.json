@@ -26,6 +26,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
+    "example:web": "bun run build && bun examples/nextd-web/run.cjs",
     "scenario": "bun test/next-app-scenarios.cjs",
     "test:app": "bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
     "prepack": "tsc -p tsconfig.json",

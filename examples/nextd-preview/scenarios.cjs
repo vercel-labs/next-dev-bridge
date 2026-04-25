@@ -4,23 +4,15 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const TEST_APP_ROOT = path.join(__dirname, 'next-app')
-const BUILD_SUBJECT_FILE = path.join(
-  TEST_APP_ROOT,
-  'app/build-errors/subject.js'
-)
+const APP_ROOT = fs.existsSync(path.join(process.cwd(), 'app'))
+  ? process.cwd()
+  : __dirname
 const BUILD_SUBJECT_PATH = 'app/build-errors/subject.js'
-const RUNTIME_MODE_FILE = path.join(
-  TEST_APP_ROOT,
-  'app/runtime-errors/runtime-mode.js'
-)
 const RUNTIME_MODE_PATH = 'app/runtime-errors/runtime-mode.js'
-const RUNTIME_EFFECT_FILE = path.join(
-  TEST_APP_ROOT,
-  'app/runtime-effect/runtime-effect-client.jsx'
-)
 const RUNTIME_EFFECT_PATH = 'app/runtime-effect/runtime-effect-client.jsx'
-const DEFAULT_SEQUENCE_DELAY_MS = 3000
+const BUILD_SUBJECT_FILE = path.join(APP_ROOT, BUILD_SUBJECT_PATH)
+const RUNTIME_MODE_FILE = path.join(APP_ROOT, RUNTIME_MODE_PATH)
+const RUNTIME_EFFECT_FILE = path.join(APP_ROOT, RUNTIME_EFFECT_PATH)
 
 const BUILD_SUBJECT_GOOD = `export const buildErrorMessage = 'The build-error route is healthy.'
 
@@ -47,7 +39,7 @@ export function describeBuildStatus() {
 const RUNTIME_MODE_GOOD = `export const runtimeMode = 'ok'
 
 export const runtimeNote =
-  'The runtime route is healthy. Run bun run scenario -- runtime:multi while this page is open to trigger multiple browser runtime errors.'
+  'The runtime route is healthy. Apply runtime:multi while this page is open to trigger multiple browser runtime errors.'
 `
 
 const RUNTIME_MODE_MULTI = `export const runtimeMode = 'multi'
@@ -191,7 +183,7 @@ export function RuntimeEffectClient() {
 
 const scenarios = {
   reset: {
-    description: 'Restore both test pages to a healthy state.',
+    description: 'Restore the example app to a healthy state.',
     route: '/',
     edits: [
       {
@@ -212,7 +204,7 @@ const scenarios = {
     ],
   },
   'build:syntax': {
-    description: 'Replace the build test module with an intentional syntax error.',
+    description: 'Replace the build module with an intentional syntax error.',
     route: '/build-errors',
     edits: [
       {
@@ -223,8 +215,7 @@ const scenarios = {
     ],
   },
   'build:missing-export': {
-    description:
-      'Replace the syntax error with a valid module that omits the named export imported by the page.',
+    description: 'Replace the syntax error with a valid module missing an export.',
     route: '/build-errors',
     edits: [
       {
@@ -235,7 +226,7 @@ const scenarios = {
     ],
   },
   'build:recover': {
-    description: 'Restore the build test module.',
+    description: 'Restore the build module.',
     route: '/build-errors',
     edits: [
       {
@@ -290,8 +281,7 @@ const scenarios = {
     ],
   },
   'runtime-effect:error': {
-    description:
-      'Add a useEffect that logs console.error and throws a runtime error.',
+    description: 'Add a useEffect that logs console.error and throws.',
     route: '/runtime-effect',
     edits: [
       {
@@ -314,29 +304,10 @@ const scenarios = {
   },
 }
 
-async function runCli(argv) {
-  const [command = 'list', ...rest] = argv
-
-  if (command === 'list' || command === '--help' || command === '-h') {
-    printHelp()
-    return
-  }
-
-  if (command === 'sequence') {
-    const delayMs = readDelay(rest)
-    await runSequence(delayMs)
-    return
-  }
-
-  applyScenario(command)
-}
-
 function applyScenario(name, log = console.log) {
   const scenario = scenarios[name]
   if (!scenario) {
-    throw new Error(
-      `Unknown test scenario "${name}". Run "bun run scenario -- list".`
-    )
+    throw new Error(`Unknown example scenario "${name}".`)
   }
 
   for (const edit of scenario.edits) {
@@ -370,8 +341,7 @@ function getAllowedScenarioFiles() {
 }
 
 function writeScenarioFile(relativePath, content) {
-  const files = getAllowedScenarioFiles()
-  const filePath = files.get(relativePath)
+  const filePath = getAllowedScenarioFiles().get(relativePath)
 
   if (!filePath) {
     throw new Error(`Cannot write unknown scenario file "${relativePath}".`)
@@ -380,84 +350,19 @@ function writeScenarioFile(relativePath, content) {
   writeFile(filePath, String(content))
 }
 
-async function runSequence(delayMs = DEFAULT_SEQUENCE_DELAY_MS) {
-  const steps = [
-    ['reset', 'healthy baseline'],
-    ['build:syntax', 'build syntax error'],
-    ['build:missing-export', 'updated build error'],
-    ['build:recover', 'build recovery'],
-    ['runtime-effect:error', 'runtime effect error'],
-    ['runtime-effect:recover', 'runtime effect recovery'],
-  ]
-
-  for (let index = 0; index < steps.length; index += 1) {
-    const [scenario, label] = steps[index]
-    applyScenario(scenario)
-
-    if (index < steps.length - 1) {
-      console.log(`Waiting ${delayMs}ms before ${label} -> next step...`)
-      await sleep(delayMs)
-    }
-  }
-}
-
-function readDelay(args) {
-  const delayArg = args.find((arg) => arg.startsWith('--delay='))
-  if (!delayArg) {
-    return DEFAULT_SEQUENCE_DELAY_MS
-  }
-
-  const delayMs = Number(delayArg.slice('--delay='.length))
-  if (!Number.isFinite(delayMs) || delayMs < 0) {
-    throw new Error(`Invalid sequence delay: ${delayArg}`)
-  }
-  return delayMs
-}
-
 function writeFile(filePath, content) {
   fs.writeFileSync(filePath, content)
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function printHelp() {
-  console.log(`Next test scenarios:
-
-  reset                  Restore both test pages
-  build:syntax           Create a syntax build error
-  build:missing-export   Create a missing export build error
-  build:recover          Recover the build-errors page
-  runtime:multi          Schedule two browser runtime errors
-  runtime:render         Throw during client render
-  runtime:recover        Recover the runtime-errors page
-  runtime-effect:clean   Restore the runtime-effect page to a clean effect
-  runtime-effect:error   Add console.error plus a thrown useEffect error
-  runtime-effect:recover Remove the throwing useEffect
-  sequence               Run reset -> build errors -> recovery -> runtime errors -> recovery
-
-Examples:
-  bun run scenario -- build:syntax
-  bun run scenario -- sequence --delay=2500
-`)
-}
-
 if (require.main === module) {
-  runCli(process.argv.slice(2)).catch((error) => {
-    console.error(error.stack || error.message)
-    process.exitCode = 1
-  })
+  const scenario = process.argv[2] || 'reset'
+  applyScenario(scenario)
 }
 
 module.exports = {
-  BUILD_SUBJECT_FILE,
-  RUNTIME_EFFECT_FILE,
-  RUNTIME_MODE_FILE,
   applyScenario,
   getAllowedScenarioFiles,
   getScenarioPayloads,
-  runSequence,
   scenarios,
   writeScenarioFile,
 }
