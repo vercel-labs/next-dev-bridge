@@ -13,6 +13,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./processor": {
+      "types": "./dist/processor.d.ts",
+      "import": "./dist/processor.js",
+      "default": "./dist/processor.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

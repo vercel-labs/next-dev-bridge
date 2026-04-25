@@ -125,7 +125,7 @@ function readJson(req) {
 }
 
 async function streamNextdEvents(req, res, url) {
-  const { watchNextDevServer } = await loadNextd()
+  const { connect } = await loadNextd()
   const target = url.searchParams.get('target') || TARGET_URL
   let observer = null
   let heartbeat = null
@@ -146,9 +146,11 @@ async function streamNextdEvents(req, res, url) {
     res.write(`data: ${JSON.stringify(payload)}\n\n`)
   }
 
-  observer = watchNextDevServer(
+  observer = connect(
     {
       url: target,
+    },
+    {
       reconnect: false,
     },
     (event, state) => {

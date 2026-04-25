@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 import {
+  connect,
+} from './index.js'
+import {
   DEFAULT_DEV_SERVER_URL,
   DEFAULT_HMR_PATH,
-  watchNextDevServer,
-} from './index.js'
+} from './websocket.js'
 
 let args
 try {
@@ -24,11 +26,13 @@ if (args.command !== 'watch') {
   process.exit(1)
 }
 
-const observer = watchNextDevServer(
+const observer = connect(
   {
     url: args.url || DEFAULT_DEV_SERVER_URL,
     path: args.path || DEFAULT_HMR_PATH,
     id: args.id,
+  },
+  {
     reconnect: !args.noReconnect,
     maxReconnects: args.once ? 0 : Infinity,
     verbose: args.verbose || args.raw,

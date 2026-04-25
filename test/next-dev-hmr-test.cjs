@@ -6,7 +6,7 @@ const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
-const { watchNextDevServer } = require('../src/index.ts')
+const { connect } = require('../src/index.ts')
 const { applyScenario } = require('./next-app-scenarios.cjs')
 
 const REPO_ROOT = path.resolve(__dirname, '..')
@@ -87,9 +87,11 @@ async function main() {
     }
     console.log('Next app is ready; connecting HMR observer')
 
-    observer = watchNextDevServer(
+    observer = connect(
       {
         url: DEV_URL,
+      },
+      {
         reconnect: false,
       },
       (event) => {
