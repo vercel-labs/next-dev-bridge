@@ -1,0 +1,45 @@
+{
+  "name": "nextd",
+  "version": "0.1.0",
+  "description": "Watch a running Next.js dev server and observe normalized build state events.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "nextd": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "packageManager": "bun@1.1.30",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
+    "scenario": "bun test/next-app-scenarios.cjs",
+    "test:app": "bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
+    "prepack": "tsc -p tsconfig.json",
+    "test": "bun test/next-dev-hmr-test.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "^6.0.3"
+  },
+  "license": "MIT"
+}
