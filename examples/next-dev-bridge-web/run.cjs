@@ -8,6 +8,8 @@ const WEB_ROOT = __dirname
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
 const PREVIEW_ROOT = path.join(REPO_ROOT, 'examples', 'next-dev-bridge-preview')
 const NEXT_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'next')
+const NODE_BIN = process.env.NODE_BINARY || 'node'
+const PREVIEW_DEV_SERVER = path.join(PREVIEW_ROOT, 'dev-server.cjs')
 const WEB_PORT = process.env.PORT || '3000'
 const PREVIEW_PORT = process.env.NEXT_DEV_BRIDGE_PREVIEW_PORT || '3001'
 const TARGET_URL = `http://127.0.0.1:${PREVIEW_PORT}`
@@ -24,7 +26,13 @@ processes.start('web', NEXT_BIN, ['dev', '-p', WEB_PORT], {
   stdio: 'inherit',
 })
 
-processes.start('preview', NEXT_BIN, ['dev', '-p', PREVIEW_PORT], {
+processes.start('preview', NODE_BIN, [
+  PREVIEW_DEV_SERVER,
+  '-p',
+  PREVIEW_PORT,
+  '-H',
+  '127.0.0.1',
+], {
   cwd: PREVIEW_ROOT,
   env: {
     ...process.env,

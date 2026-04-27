@@ -12,9 +12,9 @@ const PREVIEW_ROUTES = [
   { path: '/runtime-errors', label: 'Runtime errors', scenario: 'runtime:multi' },
 ]
 const ERROR_OVERLAY_POSITIONS = [
-  { value: 'panel', label: 'Status panel' },
   { value: 'preview-center', label: 'Preview center' },
   { value: 'preview-corner', label: 'Preview corner' },
+  { value: 'panel', label: 'Status panel' },
 ]
 const DEFAULT_CONTROL_ORIGIN = ''
 const SANDBOX_STORAGE_KEY = 'next-dev-bridge-sandbox'
@@ -25,6 +25,7 @@ export function NextDevBridgeWeb() {
   const previousErrorCountRef = useRef(0)
   const suppressBuildErrorsRef = useRef(false)
   const pendingResetPreviewRef = useRef(false)
+  const probeBuildErrorRef = useRef(false)
   const [controlOrigin, setControlOrigin] = useState(DEFAULT_CONTROL_ORIGIN)
   const [controlReady, setControlReady] = useState(false)
   const [previewOrigin, setPreviewOrigin] = useState('')
@@ -44,7 +45,8 @@ export function NextDevBridgeWeb() {
   const [buildErrors, setBuildErrors] = useState([])
   const [runtimeErrors, setRuntimeErrors] = useState([])
   const [activeErrorIndex, setActiveErrorIndex] = useState(0)
-  const [errorOverlayPosition, setErrorOverlayPosition] = useState('panel')
+  const [errorOverlayPosition, setErrorOverlayPosition] =
+    useState('preview-center')
 
   const selected = scenarios.find((scenario) => scenario.name === selectedScenario)
   const previewSrc = previewOrigin
@@ -219,12 +221,15 @@ export function NextDevBridgeWeb() {
       }
 
       if (event.type === 'build:error' && !suppressBuildErrorsRef.current) {
+        probeBuildErrorRef.current = false
         setBuildErrors(event.errors || [])
       }
 
       if (event.type === 'build:ready' || event.type === 'build:recovered') {
         suppressBuildErrorsRef.current = false
-        setBuildErrors([])
+        if (!probeBuildErrorRef.current) {
+          setBuildErrors([])
+        }
         // Next's overlay treats build success and runtime recovery separately.
         finishPendingResetPreviewReload()
       }
@@ -401,7 +406,10 @@ export function NextDevBridgeWeb() {
           headers: {
             'content-type': 'application/json',
           },
-          body: JSON.stringify({ scenario: selectedScenario }),
+          body: JSON.stringify({
+            scenario: selectedScenario,
+            skipProbe: true,
+          }),
         }
       )
 
@@ -423,6 +431,7 @@ export function NextDevBridgeWeb() {
         body: JSON.stringify({
           path: editPath,
           content: editContent,
+          probePath: selected?.route || previewPath,
         }),
       }
     )
@@ -436,7 +445,8 @@ export function NextDevBridgeWeb() {
     if (payload.preview) {
       applyPreviewPayload(payload.preview)
     }
-    reloadSandboxPreview(payload.preview)
+    reloadPreviewAfterEdit()
+    applyProbePayload(payload.probe)
     setApplyStatus(`Applied ${selectedScenario || editPath}`)
   }
 
@@ -453,7 +463,10 @@ export function NextDevBridgeWeb() {
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ scenario: name }),
+        body: JSON.stringify({
+          scenario: name,
+          probePath: name === 'reset' ? previewPath : scenario?.route,
+        }),
       }
     )
 
@@ -470,21 +483,25 @@ export function NextDevBridgeWeb() {
       setPreviewPath(scenario.route)
     }
     if (name !== 'reset') {
-      reloadSandboxPreview(payload.preview)
+      reloadPreviewAfterEdit()
     }
     clearVisibleErrors(name === 'reset')
+    applyProbePayload(payload.probe)
     setApplyStatus(
       name === 'reset' ? 'Reset written' : `Applied ${name}`
     )
-  }
-
-  function reloadSandboxPreview(preview) {
-    if ((preview?.mode || previewMode) === 'sandbox') {
-      setPreviewVersion((value) => value + 1)
+    if (name === 'reset' && payload.probe?.ok) {
+      suppressBuildErrorsRef.current = false
+      finishPendingResetPreviewReload()
     }
   }
 
+  function reloadPreviewAfterEdit() {
+    setPreviewVersion((value) => value + 1)
+  }
+
   function clearVisibleErrors(clearFeed = false) {
+    probeBuildErrorRef.current = false
     setBuildErrors([])
     setRuntimeErrors([])
     resetRuntimeObserver()
@@ -493,6 +510,27 @@ export function NextDevBridgeWeb() {
       setHmrEvents([])
       setHmrExpanded(false)
     }
+  }
+
+  function applyProbePayload(probe) {
+    if (!probe || suppressBuildErrorsRef.current) {
+      return
+    }
+
+    if (!probe.error) {
+      if (probe.ok) {
+        probeBuildErrorRef.current = false
+        setBuildErrors([])
+      }
+      return
+    }
+
+    const formattedError = formatProbeBuildError(probe)
+    const logEntry = `[ERROR] count=1 source=probe status=${probe.status}`
+    probeBuildErrorRef.current = true
+    setBuildErrors([formattedError])
+    setHmrEvent(logEntry)
+    setHmrEvents((events) => [...events, logEntry].slice(-120))
   }
 
   function resetRuntimeObserver() {
@@ -873,6 +911,21 @@ function formatRuntimeError(error) {
 
   if (codeFrame) {
     lines.push(codeFrame)
+  }
+
+  return lines.join('\n')
+}
+
+function formatProbeBuildError(probe) {
+  const error = probe.error || {}
+  const message = stripAnsi(
+    error.message || `Preview returned HTTP ${probe.status || 500}.`
+  )
+  const stack = stripAnsi(error.stack || '')
+  const lines = [message]
+
+  if (stack && !stack.includes(message)) {
+    lines.push(stack)
   }
 
   return lines.join('\n')

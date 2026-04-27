@@ -29,7 +29,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}))
-    const { session, scenarios } = await applyScenarioEditForRequest(
+    const { probe, session, scenarios } = await applyScenarioEditForRequest(
       request,
       body
     )
@@ -37,6 +37,7 @@ export async function POST(request) {
     return jsonWithSession(
       {
         ok: true,
+        probe,
         preview: getPublicSession(session),
         scenarios,
       },

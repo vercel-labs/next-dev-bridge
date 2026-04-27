@@ -19,7 +19,20 @@ const SANDBOX_TIMEOUT_MS = Number(
   process.env.NEXT_DEV_BRIDGE_SANDBOX_TIMEOUT_MS || 60 * 60 * 1000
 )
 const SANDBOX_VCPUS = Number(process.env.NEXT_DEV_BRIDGE_SANDBOX_VCPUS || 2)
-const FIXTURE_VERSION = '2026-04-27-allowed-dev-origins'
+const PROBE_TIMEOUT_MS = Number(
+  process.env.NEXT_DEV_BRIDGE_PROBE_TIMEOUT_MS || 10_000
+)
+const PROBE_FETCH_TIMEOUT_MS = Number(
+  process.env.NEXT_DEV_BRIDGE_PROBE_FETCH_TIMEOUT_MS || 5000
+)
+const PROBE_RETRY_DELAY_MS = Number(
+  process.env.NEXT_DEV_BRIDGE_PROBE_RETRY_DELAY_MS || 200
+)
+const PROBE_DEFAULT_ATTEMPTS = Number(
+  process.env.NEXT_DEV_BRIDGE_PROBE_DEFAULT_ATTEMPTS || 4
+)
+const FIXTURE_VERSION =
+  '2026-04-27-skip-layout-html-hide-nextjs-portal-probe-route'
 const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
 const SESSION_COOKIE = 'next-dev-bridge-sandbox'
 const COOKIE_MAX_AGE_SECONDS = Math.max(
@@ -137,9 +150,16 @@ export async function applyScenarioEditForRequest(request, body) {
       throw new BadRequestError('Expected { scenario } or { path, content }.')
     }
 
-    return {
+    const scenarios = getLocalScenarioPayloads()
+    const probe = await probePreviewRoute(
       session,
-      scenarios: getLocalScenarioPayloads(),
+      getProbeRequest(body, scenarios)
+    )
+
+    return {
+      probe,
+      session,
+      scenarios,
     }
   }
 
@@ -170,8 +190,13 @@ writeScenarioFile(relativePath, content)`,
   }
 
   const scenarios = await getScenarioPayloadsFromSandbox(session.sandbox)
+  const probe = await probePreviewRoute(
+    session,
+    getProbeRequest(body, scenarios)
+  )
 
   return {
+    probe,
     session,
     scenarios,
   }
@@ -337,8 +362,8 @@ async function ensurePreviewDevServer(sandbox, options = {}) {
 
   const previewOrigin = sandbox.domain(SANDBOX_PORT)
   const command = await sandbox.runCommand({
-    cmd: `${SANDBOX_PREVIEW_ROOT}/node_modules/.bin/next`,
-    args: ['dev', '-p', String(SANDBOX_PORT), '-H', '0.0.0.0'],
+    cmd: 'node',
+    args: ['dev-server.cjs', '-p', String(SANDBOX_PORT), '-H', '0.0.0.0'],
     cwd: SANDBOX_PREVIEW_ROOT,
     detached: true,
     env: {
@@ -360,7 +385,7 @@ async function stopSandboxPreviewDevServer(sandbox) {
     cmd: 'sh',
     args: [
       '-lc',
-      `pkill -f ${shellQuote(`[n]ext dev -p ${SANDBOX_PORT}`)} || true`,
+      `pkill -f ${shellQuote(`[d]ev-server.cjs -p ${SANDBOX_PORT}`)} || true`,
     ],
     cwd: SANDBOX_PREVIEW_ROOT,
   })
@@ -423,6 +448,191 @@ async function waitForPreviewOrigin(previewOrigin) {
   }
 
   throw new Error('Timed out waiting for the sandbox preview URL.')
+}
+
+async function probePreviewRoute(session, probe) {
+  const normalizedPath = normalizeProbePath(probe?.path || probe)
+  if (!normalizedPath) {
+    return null
+  }
+
+  const expectation = probe?.expectation || ''
+  const deadline = Date.now() + PROBE_TIMEOUT_MS
+  let attempts = 0
+  let lastResult = null
+
+  while (Date.now() < deadline) {
+    attempts += 1
+
+    try {
+      const response = await fetchWithTimeout(
+        new URL(normalizedPath, session.targetUrl)
+      )
+      const result = await readProbeResponse(response, normalizedPath)
+      lastResult = result
+
+      if (result.error) {
+        return result
+      }
+
+      if (expectation && matchesProbeExpectation(response, expectation)) {
+        return result
+      }
+
+      if (!expectation && attempts >= PROBE_DEFAULT_ATTEMPTS) {
+        return result
+      }
+    } catch {
+      if (!expectation && attempts >= PROBE_DEFAULT_ATTEMPTS) {
+        return lastResult
+      }
+    }
+
+    await delay(PROBE_RETRY_DELAY_MS)
+  }
+
+  return lastResult
+}
+
+async function fetchWithTimeout(url) {
+  const controller = new AbortController()
+  const timeout = setTimeout(
+    () => controller.abort(),
+    PROBE_FETCH_TIMEOUT_MS
+  )
+
+  try {
+    return await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'x-next-dev-bridge-probe': '1',
+      },
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function matchesProbeExpectation(response, expectation) {
+  if (expectation === 'error') {
+    return response.status >= 500
+  }
+
+  if (expectation === 'ready') {
+    return response.status < 500
+  }
+
+  return true
+}
+
+async function readProbeResponse(response, probePath) {
+  const result = {
+    ok: response.status < 500,
+    path: probePath,
+    status: response.status,
+  }
+
+  if (response.status < 500) {
+    return result
+  }
+
+  const text = await response.text().catch(() => '')
+  const error = extractNextDataError(text)
+  return {
+    ...result,
+    error: error || {
+      message: `Preview returned HTTP ${response.status}.`,
+      name: 'PreviewBuildError',
+    },
+  }
+}
+
+function extractNextDataError(html) {
+  const match = String(html).match(
+    /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/
+  )
+  if (!match) {
+    return null
+  }
+
+  try {
+    const payload = JSON.parse(match[1])
+    const error = payload?.err
+    if (!error) {
+      return null
+    }
+
+    return {
+      message:
+        typeof error.message === 'string'
+          ? error.message
+          : 'Preview returned a build error.',
+      name: typeof error.name === 'string' ? error.name : 'PreviewBuildError',
+      stack: typeof error.stack === 'string' ? error.stack : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+function getProbeRequest(body, scenarios) {
+  if (body.skipProbe === true) {
+    return null
+  }
+
+  const explicitPath = normalizeProbePath(body.probePath)
+  const scenario =
+    typeof body.scenario === 'string'
+      ? scenarios.find((entry) => entry.name === body.scenario)
+      : null
+  const path = explicitPath || scenario?.route
+
+  return {
+    expectation: getProbeExpectation(body, scenario),
+    path,
+  }
+}
+
+function getProbeExpectation(body, scenario) {
+  if (body.probeExpectation === 'error' || body.probeExpectation === 'ready') {
+    return body.probeExpectation
+  }
+
+  if (!scenario) {
+    return ''
+  }
+
+  if (
+    scenario.name === 'build:syntax' ||
+    scenario.name === 'build:missing-export'
+  ) {
+    return 'error'
+  }
+
+  if (scenario.name === 'build:recover' || scenario.name === 'reset') {
+    return 'ready'
+  }
+
+  return ''
+}
+
+function normalizeProbePath(value) {
+  if (typeof value !== 'string') {
+    return ''
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  try {
+    const url = new URL(trimmed, 'http://next-dev-bridge.local')
+    return `${url.pathname || '/'}${url.search}`
+  } catch {
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
 }
 
 async function runCheckedCommand(sandbox, label, params) {

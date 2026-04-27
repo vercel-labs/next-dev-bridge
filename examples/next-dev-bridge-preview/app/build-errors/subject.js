@@ -1,5 +1,5 @@
-export const buildErrorMessage = 'The build-error route is healthy.'
+export const buildErrorMessage = 'This module contains an intentional syntax error.'
 
 export function describeBuildStatus() {
-  return 'This text comes from app/build-errors/subject.js. Scenario scripts rewrite this module to trigger and recover from compiler errors.'
+  return (
 }
