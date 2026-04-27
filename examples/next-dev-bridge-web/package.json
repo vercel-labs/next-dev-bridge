@@ -10,7 +10,7 @@
   "dependencies": {
     "@vercel/sandbox": "latest",
     "next": "latest",
-    "next-dev-bridge": "file:../..",
+    "next-dev-bridge": "0.1.0",
     "react": "latest",
     "react-dom": "latest",
     "respinner": "^4.0.3"
