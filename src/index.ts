@@ -3,7 +3,7 @@ export type {
   ConnectOptions,
   NextInstance,
   NextInstanceOptions,
-  NextoConnection,
-  NextoEvent,
-  NextoEventListener,
+  NextDevBridgeConnection,
+  NextDevBridgeEvent,
+  NextDevBridgeEventListener,
 } from './observer.js'

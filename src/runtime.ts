@@ -305,13 +305,13 @@ function serializeScriptOptions(options: RuntimeErrorObserverScriptOptions) {
 }
 
 function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOptions) {
-  const symbol = Symbol.for('__nexto_runtime_observer__')
+  const symbol = Symbol.for('__next_dev_bridge_runtime_observer__')
   const existing = (window as any)[symbol]
   const options = rawOptions || {}
-  const messageType = options.messageType || 'nexto:runtime'
+  const messageType = options.messageType || 'next-dev-bridge:runtime'
   const minResetAfterErrorMs = options.minResetAfterErrorMs ?? 1000
-  const readyMessageType = options.readyMessageType || 'nexto:runtime-ready'
-  const resetMessageType = options.resetMessageType || 'nexto:runtime-reset'
+  const readyMessageType = options.readyMessageType || 'next-dev-bridge:runtime-ready'
+  const resetMessageType = options.resetMessageType || 'next-dev-bridge:runtime-reset'
   const targetOrigin = options.targetOrigin || '*'
   const shouldDedupe = options.dedupe !== false
   const shouldResetOnRefresh = options.resetOnRefresh !== false
@@ -673,11 +673,11 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     }
 
     const nativeWebSocket = window.WebSocket
-    if ((nativeWebSocket as any).__nextoRuntimePatched) {
+    if ((nativeWebSocket as any).__nextDevBridgeRuntimePatched) {
       return
     }
 
-    function NextoRuntimeWebSocket(
+    function NextDevBridgeRuntimeWebSocket(
       this: WebSocket,
       url: string | URL,
       protocols?: string | string[]
@@ -714,9 +714,9 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       return socket
     }
 
-    NextoRuntimeWebSocket.prototype = nativeWebSocket.prototype
-    Object.assign(NextoRuntimeWebSocket, nativeWebSocket)
-    ;(NextoRuntimeWebSocket as any).__nextoRuntimePatched = true
-    window.WebSocket = NextoRuntimeWebSocket as any
+    NextDevBridgeRuntimeWebSocket.prototype = nativeWebSocket.prototype
+    Object.assign(NextDevBridgeRuntimeWebSocket, nativeWebSocket)
+    ;(NextDevBridgeRuntimeWebSocket as any).__nextDevBridgeRuntimePatched = true
+    window.WebSocket = NextDevBridgeRuntimeWebSocket as any
   }
 }

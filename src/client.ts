@@ -1,15 +1,15 @@
 export { observeNextDev } from './client-observer.js'
 export type {
-  NextoClientEvent,
-  NextoClientEventListener,
-  NextoClientObserver,
-  NextoClientState,
+  NextDevBridgeClientEvent,
+  NextDevBridgeClientEventListener,
+  NextDevBridgeClientObserver,
+  NextDevBridgeClientState,
   ObserveNextDevOptions,
 } from './client-observer.js'
 
 export { processHMR } from './processor.js'
 export type {
-  NextoState,
+  NextDevBridgeState,
   ProcessHMR,
   ProcessHMREvent,
   ProcessHMRListener,

@@ -20,7 +20,7 @@ if (args.help) {
   process.exit(0)
 }
 
-if (args.command !== 'watch') {
+if (args.command !== 'observe') {
   process.stderr.write(`Unknown command: ${args.command}\n`)
   process.exit(1)
 }
@@ -50,7 +50,7 @@ process.once('SIGTERM', () => {
 
 function parseArgs(argv) {
   const result = {
-    command: 'watch',
+    command: 'observe',
     url: null,
     verbose: false,
     noReconnect: false,
@@ -58,8 +58,8 @@ function parseArgs(argv) {
   }
 
   const args = [...argv]
-  if (args[0] === 'watch') {
-    result.command = args.shift()
+  if (args[0] === 'observe' || args[0] === 'watch') {
+    args.shift()
   } else if (args[0] === 'help') {
     result.help = true
     args.shift()
@@ -97,15 +97,15 @@ function requireValue(argv, index, flag) {
 }
 
 function printHelp() {
-  process.stdout.write(`nexto
+  process.stdout.write(`next-dev-bridge
 
-Watch a running Next.js dev server and print normalized build state events.
+Observe a running Next.js dev server and print normalized build/runtime state events.
 
 Usage:
-  nexto watch [url] [options]
-  nexto [url] [options]
-  node dist/cli.js watch [url] [options]
-  bun run watch -- [url] [options]
+  next-dev-bridge [url] [options]
+  next-dev-bridge observe [url] [options]
+  node dist/cli.js observe [url] [options]
+  bun run observe -- [url] [options]
 
 Arguments:
   url                 Dev server URL or port. Defaults to ${DEFAULT_DEV_SERVER_URL}

@@ -10,7 +10,7 @@ const HMR_TYPES = {
 
 export type { SerializedError }
 
-export interface NextoState {
+export interface NextDevBridgeState {
   connection: 'idle' | 'connecting' | 'connected' | 'disconnected'
   phase: 'idle' | 'compiling' | 'ok' | 'error'
   building: boolean
@@ -86,18 +86,18 @@ export interface ProcessHMROptions {
 
 export type ProcessHMRListener = (
   event: ProcessHMREvent,
-  state: NextoState
+  state: NextDevBridgeState
 ) => void
 
 export interface ProcessHMRResult {
   events: ProcessHMREvent[]
-  state: NextoState
+  state: NextDevBridgeState
 }
 
 export interface ProcessHMR {
   (raw: unknown, listener?: ProcessHMRListener): ProcessHMRResult
-  getSnapshot(): NextoState
-  reset(): NextoState
+  getSnapshot(): NextDevBridgeState
+  reset(): NextDevBridgeState
 }
 
 export function processHMR(options: ProcessHMROptions = {}): ProcessHMR {
@@ -155,7 +155,7 @@ export function processHMR(options: ProcessHMROptions = {}): ProcessHMR {
 }
 
 function reduceHmrMessage(
-  state: NextoState,
+  state: NextDevBridgeState,
   message: Record<string, unknown>,
   options: ProcessHMROptions,
   emit: (event: ProcessHMREvent) => void
@@ -283,7 +283,7 @@ function timestamp(options: ProcessHMROptions) {
   return value
 }
 
-function createInitialState(): NextoState {
+function createInitialState(): NextDevBridgeState {
   return {
     connection: 'idle',
     phase: 'idle',
@@ -545,7 +545,7 @@ function stripAnsi(value: string) {
   return String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
 }
 
-function cloneState(state: NextoState): NextoState {
+function cloneState(state: NextDevBridgeState): NextDevBridgeState {
   return {
     ...state,
     errors: [...state.errors],

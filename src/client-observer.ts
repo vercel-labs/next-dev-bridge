@@ -1,6 +1,6 @@
 import {
   processHMR,
-  type NextoState,
+  type NextDevBridgeState,
   type ProcessHMREvent,
 } from './processor.js'
 import {
@@ -11,16 +11,16 @@ import {
   type RuntimeErrorState,
 } from './runtime.js'
 
-export type NextoClientEvent = ProcessHMREvent | RuntimeErrorEvent
+export type NextDevBridgeClientEvent = ProcessHMREvent | RuntimeErrorEvent
 
-export interface NextoClientState {
-  build: NextoState
+export interface NextDevBridgeClientState {
+  build: NextDevBridgeState
   runtime: RuntimeErrorState
 }
 
-export type NextoClientEventListener = (
-  event: NextoClientEvent,
-  state: NextoClientState
+export type NextDevBridgeClientEventListener = (
+  event: NextDevBridgeClientEvent,
+  state: NextDevBridgeClientState
 ) => void
 
 export interface ObserveNextDevOptions
@@ -31,16 +31,16 @@ export interface ObserveNextDevOptions
   rewriteWebSocketURL?: (url: string | URL) => string | URL
 }
 
-export interface NextoClientObserver {
+export interface NextDevBridgeClientObserver {
   stop(): void
-  getSnapshot(): NextoClientState
-  reset(): NextoClientState
+  getSnapshot(): NextDevBridgeClientState
+  reset(): NextDevBridgeClientState
 }
 
 export function observeNextDev(
-  listener: NextoClientEventListener,
+  listener: NextDevBridgeClientEventListener,
   options: ObserveNextDevOptions = {}
-): NextoClientObserver {
+): NextDevBridgeClientObserver {
   const handleHMR = processHMR({
     now: options.now,
     raw: options.raw,
@@ -69,13 +69,13 @@ export function observeNextDev(
   ]
   let stopped = false
 
-  function emit(event: NextoClientEvent) {
+  function emit(event: NextDevBridgeClientEvent) {
     if (!stopped) {
       listener(event, getSnapshot())
     }
   }
 
-  function getSnapshot(): NextoClientState {
+  function getSnapshot(): NextDevBridgeClientState {
     return {
       build: handleHMR.getSnapshot(),
       runtime: runtime.getSnapshot(),
@@ -86,7 +86,7 @@ export function observeNextDev(
     return hmrPaths.some((path) => url.includes(path))
   }
 
-  function NextoWebSocket(
+  function NextDevBridgeWebSocket(
     this: WebSocket,
     url: string | URL,
     protocols?: string | string[]
@@ -114,13 +114,13 @@ export function observeNextDev(
     return socket
   }
 
-  NextoWebSocket.prototype = NativeWebSocket.prototype
-  Object.assign(NextoWebSocket, NativeWebSocket)
-  window.WebSocket = NextoWebSocket as unknown as typeof WebSocket
+  NextDevBridgeWebSocket.prototype = NativeWebSocket.prototype
+  Object.assign(NextDevBridgeWebSocket, NativeWebSocket)
+  window.WebSocket = NextDevBridgeWebSocket as unknown as typeof WebSocket
 
   return createClientObserver(handleHMR, runtime, () => {
     stopped = true
-    if (window.WebSocket === (NextoWebSocket as unknown as typeof WebSocket)) {
+    if (window.WebSocket === (NextDevBridgeWebSocket as unknown as typeof WebSocket)) {
       window.WebSocket = NativeWebSocket
     }
   })
@@ -129,7 +129,7 @@ export function observeNextDev(
     hmr: typeof handleHMR,
     runtimeObserver: RuntimeErrorObserver,
     cleanup: () => void
-  ): NextoClientObserver {
+  ): NextDevBridgeClientObserver {
     return {
       stop() {
         cleanup()

@@ -8,14 +8,14 @@ const {
   applyScenario,
   getScenarioPayloads,
   writeScenarioFile,
-} = require('../nexto-preview/scenarios.cjs')
+} = require('../next-dev-bridge-preview/scenarios.cjs')
 
 const ROOT = path.resolve(__dirname, '..', '..')
-const PORT = Number(process.env.NEXTO_CONTROL_PORT || 3010)
-const HOST = process.env.NEXTO_CONTROL_HOST || '127.0.0.1'
-const TARGET_URL = process.env.NEXTO_TARGET_URL || 'http://127.0.0.1:3001'
+const PORT = Number(process.env.NEXT_DEV_BRIDGE_CONTROL_PORT || 3010)
+const HOST = process.env.NEXT_DEV_BRIDGE_CONTROL_HOST || '127.0.0.1'
+const TARGET_URL = process.env.NEXT_DEV_BRIDGE_TARGET_URL || 'http://127.0.0.1:3001'
 
-let nextoPromise = null
+let nextDevBridgePromise = null
 
 const server = http.createServer(async (req, res) => {
   setCorsHeaders(res)
@@ -64,8 +64,8 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    if (req.method === 'GET' && url.pathname === '/api/nexto-events') {
-      await streamNextoEvents(req, res, url)
+    if (req.method === 'GET' && url.pathname === '/api/next-dev-bridge-events') {
+      await streamNextDevBridgeEvents(req, res, url)
       return
     }
 
@@ -82,7 +82,7 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`nexto web control server listening on http://${HOST}:${PORT}`)
+  console.log(`next-dev-bridge web control server listening on http://${HOST}:${PORT}`)
   console.log(`editing and observing preview app at ${TARGET_URL}`)
 })
 
@@ -124,8 +124,8 @@ function readJson(req) {
   })
 }
 
-async function streamNextoEvents(req, res, url) {
-  const { connect } = await loadNexto()
+async function streamNextDevBridgeEvents(req, res, url) {
+  const { connect } = await loadNextDevBridge()
   const target = url.searchParams.get('target') || TARGET_URL
   let observer = null
   let heartbeat = null
@@ -154,7 +154,7 @@ async function streamNextoEvents(req, res, url) {
       reconnect: false,
     },
     (event, state) => {
-      send('nexto', { event, state })
+      send('next-dev-bridge', { event, state })
     }
   )
 
@@ -175,12 +175,12 @@ async function streamNextoEvents(req, res, url) {
   })
 }
 
-function loadNexto() {
-  if (!nextoPromise) {
-    nextoPromise = import(pathToFileURL(path.join(ROOT, 'dist/index.js')).href)
+function loadNextDevBridge() {
+  if (!nextDevBridgePromise) {
+    nextDevBridgePromise = import(pathToFileURL(path.join(ROOT, 'dist/index.js')).href)
   }
 
-  return nextoPromise
+  return nextDevBridgePromise
 }
 
 function shutdown(code) {

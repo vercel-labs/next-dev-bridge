@@ -1,7 +1,7 @@
 {
-  "name": "nexto",
+  "name": "next-dev-bridge",
   "version": "0.0.1",
-  "description": "Watch a running Next.js dev server and observe normalized build state events.",
+  "description": "Bridge a running Next.js dev server to normalized build and runtime state events.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,7 +20,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "nexto": "./dist/cli.js"
+    "next-dev-bridge": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -31,8 +31,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
-    "example:web": "bun run build && bun examples/nexto-web/run.cjs",
+    "observe": "node dist/cli.js observe http://localhost:3000 --verbose",
+    "example:web": "bun run build && bun examples/next-dev-bridge-web/run.cjs",
     "scenario": "bun test/next-app-scenarios.mjs",
     "test:app": "bun run build && bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
     "prepack": "tsc -p tsconfig.json",

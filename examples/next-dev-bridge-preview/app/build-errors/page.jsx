@@ -11,7 +11,7 @@ export default function BuildErrorsPage() {
           <p className="lede">
             This route imports <code>app/build-errors/subject.js</code>. The
             example editor rewrites that file to create build failures that
-            nexto can see directly.
+            next-dev-bridge can see directly.
           </p>
         </section>
         <Link className="backLink" href="/">

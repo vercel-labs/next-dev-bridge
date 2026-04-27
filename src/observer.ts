@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 
 import { serializeError, type SerializedError } from './errors.js'
 import {
-  type NextoState,
+  type NextDevBridgeState,
   type ProcessHMREvent,
   processHMR,
   type ProcessHMR,
@@ -31,7 +31,7 @@ export interface ConnectOptions {
 
 interface ObserverOptions extends NextInstanceOptions, ConnectOptions {}
 
-export type NextoEvent =
+export type NextDevBridgeEvent =
   | { type: 'session:connecting'; url: string }
   | { type: 'session:connected'; url: string }
   | { type: 'session:disconnected'; code?: number; reason?: string }
@@ -47,32 +47,32 @@ export interface InternalBinaryMessageEvent {
   opcode: number
 }
 
-export type NextoEventListener = (
-  event: NextoEvent,
-  state: NextoState
+export type NextDevBridgeEventListener = (
+  event: NextDevBridgeEvent,
+  state: NextDevBridgeState
 ) => void
 
-export interface NextoConnection {
+export interface NextDevBridgeConnection {
   stop(): void
-  getSnapshot(): NextoState
-  on(eventName: 'event', listener: NextoEventListener): this
+  getSnapshot(): NextDevBridgeState
+  on(eventName: 'event', listener: NextDevBridgeEventListener): this
   on(eventName: string | symbol, listener: (...args: any[]) => void): this
 }
 
 export function connect(
   next?: NextInstance,
-  listener?: NextoEventListener
-): NextoConnection
+  listener?: NextDevBridgeEventListener
+): NextDevBridgeConnection
 export function connect(
   next: NextInstance,
   options?: ConnectOptions,
-  listener?: NextoEventListener
-): NextoConnection
+  listener?: NextDevBridgeEventListener
+): NextDevBridgeConnection
 export function connect(
   next: NextInstance = {},
-  optionsOrListener?: ConnectOptions | NextoEventListener,
-  maybeListener?: NextoEventListener
-): NextoConnection {
+  optionsOrListener?: ConnectOptions | NextDevBridgeEventListener,
+  maybeListener?: NextDevBridgeEventListener
+): NextDevBridgeConnection {
   const nextOptions = normalizeNextInstance(next)
   const connectOptions =
     typeof optionsOrListener === 'function' ? {} : optionsOrListener || {}
@@ -92,10 +92,10 @@ export function connect(
   return observer
 }
 
-class NextHmrObserverImpl extends EventEmitter implements NextoConnection {
+class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnection {
   private options: Required<ObserverOptions>
   private processHMR: ProcessHMR
-  private connection: NextoState['connection']
+  private connection: NextDevBridgeState['connection']
   private reconnectAttempt: number
   private closed: boolean
   private socket: any
@@ -218,7 +218,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextoConnection {
     }, delayMs)
   }
 
-  private emitEvent(event: NextoEvent) {
+  private emitEvent(event: NextDevBridgeEvent) {
     const snapshot = this.getSnapshot()
     this.emit('event', event, snapshot)
     this.emit(event.type, event, snapshot)

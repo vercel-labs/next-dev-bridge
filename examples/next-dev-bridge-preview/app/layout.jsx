@@ -1,6 +1,6 @@
 import './globals.css'
 
-import { createRuntimeErrorObserverScript } from 'nexto/client'
+import { createRuntimeErrorObserverScript } from 'next-dev-bridge/client'
 
 const HIDE_NEXT_PORTAL = `nextjs-portal {
   display: none !important;
@@ -14,8 +14,8 @@ const RUNTIME_ERROR_OBSERVER_SCRIPT = createRuntimeErrorObserverScript({
 })
 
 export const metadata = {
-  title: 'nexto Preview App',
-  description: 'Preview app intentionally edited by the nexto web example.',
+  title: 'next-dev-bridge Preview App',
+  description: 'Preview app intentionally edited by the next-dev-bridge web example.',
 }
 
 export default function RootLayout({ children }) {
@@ -23,11 +23,11 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <head>
         <style
-          id="nexto-hide-nextjs-portal"
+          id="next-dev-bridge-hide-nextjs-portal"
           dangerouslySetInnerHTML={{ __html: HIDE_NEXT_PORTAL }}
         />
         <script
-          id="nexto-runtime-error-observer"
+          id="next-dev-bridge-runtime-error-observer"
           dangerouslySetInnerHTML={{ __html: RUNTIME_ERROR_OBSERVER_SCRIPT }}
         />
       </head>

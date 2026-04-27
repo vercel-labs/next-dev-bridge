@@ -1,13 +1,13 @@
-# nexto API
+# next-dev-bridge API
 
-`nexto` exposes one Node API and one browser API for the common paths:
+`next-dev-bridge` exposes one Node API and one browser API for the common paths:
 
 ```ts
-import { connect } from 'nexto'
-import { observeNextDev } from 'nexto/client'
+import { connect } from 'next-dev-bridge'
+import { observeNextDev } from 'next-dev-bridge/client'
 ```
 
-Use `connect()` from `nexto` in Node to attach to a running Next dev server. Use `observeNextDev()` from `nexto/client` inside the preview browser or iframe to observe HMR build state and browser runtime errors from one event stream.
+Use `connect()` from `next-dev-bridge` in Node to attach to a running Next dev server. Use `observeNextDev()` from `next-dev-bridge/client` inside the preview browser or iframe to observe HMR build state and browser runtime errors from one event stream.
 
 ## connect
 
@@ -18,7 +18,7 @@ const connection = connect(next, options, listener)
 `connect()` opens the Next dev websocket, processes incoming HMR messages, and emits normalized events.
 
 ```ts
-import { connect } from 'nexto'
+import { connect } from 'next-dev-bridge'
 
 const connection = connect(
   {
@@ -81,7 +81,7 @@ const observer = observeNextDev(listener, options)
 `observeNextDev()` is the preferred browser API. It wraps the Next HMR websocket, installs browser runtime error listeners, and emits normalized build/runtime events. Runtime errors include decoded frames when Next.js can resolve them.
 
 ```ts
-import { observeNextDev } from 'nexto/client'
+import { observeNextDev } from 'next-dev-bridge/client'
 
 const observer = observeNextDev(
   (event, state) => {
@@ -96,7 +96,7 @@ const observer = observeNextDev(
 
     window.parent.postMessage(
       {
-        type: 'nexto:event',
+        type: 'next-dev-bridge:event',
         event,
         state,
       },
@@ -114,7 +114,7 @@ window.addEventListener('pagehide', () => {
 })
 ```
 
-For iframe runtimes that rewrite websocket URLs, pass `rewriteWebSocketURL` and let nexto process the rewritten socket messages:
+For iframe runtimes that rewrite websocket URLs, pass `rewriteWebSocketURL` and let next-dev-bridge process the rewritten socket messages:
 
 ```ts
 observeNextDev(listener, {
@@ -129,7 +129,7 @@ observeNextDev(listener, {
 For the v0 frame runtime, keep the existing websocket URL rewrite and parent `postMessage` shape. Let `observeNextDev()` own HMR message processing and browser runtime error capture.
 
 ```ts
-import { observeNextDev } from 'nexto/client'
+import { observeNextDev } from 'next-dev-bridge/client'
 
 type ParentMessage = Record<string, unknown>
 
@@ -138,7 +138,9 @@ interface FrameObserverOptions {
   sendToParent?: (message: ParentMessage) => void
 }
 
-export function installNextoFrameObserver(options: FrameObserverOptions = {}) {
+export function installNextDevBridgeFrameObserver(
+  options: FrameObserverOptions = {}
+) {
   const sendToParent =
     options.sendToParent ||
     ((message) => {
@@ -148,7 +150,7 @@ export function installNextoFrameObserver(options: FrameObserverOptions = {}) {
   return observeNextDev(
     (event, state) => {
       sendToParent({
-        type: 'nexto:event',
+        type: 'next-dev-bridge:event',
         event,
         state,
       })
@@ -178,10 +180,10 @@ const handleHMR = processHMR(options)
 const result = handleHMR(rawMessage, listener)
 ```
 
-`processHMR()` is the lower-level HMR processor used by `observeNextDev()`. Use it only when you already own websocket interception and do not want nexto to install runtime error listeners.
+`processHMR()` is the lower-level HMR processor used by `observeNextDev()`. Use it only when you already own websocket interception and do not want next-dev-bridge to install runtime error listeners.
 
 ```ts
-import { processHMR } from 'nexto/client'
+import { processHMR } from 'next-dev-bridge/client'
 
 const handleHMR = processHMR()
 
@@ -191,7 +193,7 @@ ws.addEventListener('message', (messageEvent) => {
   for (const event of events) {
     window.parent.postMessage(
       {
-        type: 'nexto:event',
+        type: 'next-dev-bridge:event',
         event,
         state,
       },
@@ -212,13 +214,13 @@ const runtime = observeRuntimeErrors(listener, options)
 `observeRuntimeErrors()` is the lower-level runtime-only observer used by `observeNextDev()`. Use it only when you do not need HMR build state.
 
 ```ts
-import { observeRuntimeErrors } from 'nexto/client'
+import { observeRuntimeErrors } from 'next-dev-bridge/client'
 
 const runtime = observeRuntimeErrors(
   (event, state) => {
     window.parent.postMessage(
       {
-        type: 'nexto:runtime',
+        type: 'next-dev-bridge:runtime',
         event,
         state,
       },
@@ -236,7 +238,7 @@ Runtime errors are not carried by HMR build messages. In a Next preview iframe, 
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 
 ```ts
-import { createRuntimeErrorObserverScript } from 'nexto/client'
+import { createRuntimeErrorObserverScript } from 'next-dev-bridge/client'
 
 const script = createRuntimeErrorObserverScript({
   resetOnRefresh: true,
@@ -244,9 +246,9 @@ const script = createRuntimeErrorObserverScript({
 })
 ```
 
-The script posts `nexto:runtime`, `nexto:runtime-ready`, and listens for `nexto:runtime-reset`. With `resetOnRefresh` enabled, it clears captured runtime errors after a successful iframe-side HMR refresh settles, matching Next's overlay behavior more closely than clearing from a parent-side build event.
+The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. With `resetOnRefresh` enabled, it clears captured runtime errors after a successful iframe-side HMR refresh settles, matching Next's overlay behavior more closely than clearing from a parent-side build event.
 
-nexto sends captured runtime stack frames to Next.js as-is and uses the decoded
+next-dev-bridge sends captured runtime stack frames to Next.js as-is and uses the decoded
 frames when Next can resolve them.
 
 ## Events
@@ -313,7 +315,7 @@ const warningCount = event.warnings.length
 
 ```ts
 {
-  build: NextoState,
+  build: NextDevBridgeState,
   runtime: {
     errors: RuntimeErrorInfo[],
   },

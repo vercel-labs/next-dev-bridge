@@ -137,8 +137,8 @@ describe('observeRuntimeErrors', () => {
 
     expect(script).toContain('addEventListener')
     expect(script).toContain('WebSocket')
-    expect(script).toContain('nexto:runtime')
-    expect(script).toContain('nexto:runtime-reset')
+    expect(script).toContain('next-dev-bridge:runtime')
+    expect(script).toContain('next-dev-bridge:runtime-reset')
     expect(script).toContain('https://example.com')
     expect(script).not.toContain('</script>')
   })

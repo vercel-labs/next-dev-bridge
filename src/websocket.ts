@@ -139,7 +139,7 @@ class MinimalWebSocketClient extends EventEmitter {
       'Connection: Upgrade',
       `Sec-WebSocket-Key: ${key}`,
       'Sec-WebSocket-Version: 13',
-      'User-Agent: nexto',
+      'User-Agent: next-dev-bridge',
     ]
 
     this.socket.write(`${headerLines.join('\r\n')}\r\n\r\n`)

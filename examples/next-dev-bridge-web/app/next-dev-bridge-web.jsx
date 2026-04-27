@@ -19,7 +19,7 @@ const ERROR_OVERLAY_POSITIONS = [
 const DEFAULT_CONTROL_ORIGIN = 'http://127.0.0.1:3010'
 const DEFAULT_PREVIEW_ORIGIN = 'http://127.0.0.1:3001'
 
-export function NextoWeb() {
+export function NextDevBridgeWeb() {
   const previewFrameRef = useRef(null)
   const runtimeWindowIdRef = useRef(null)
   const previousErrorCountRef = useRef(0)
@@ -44,7 +44,7 @@ export function NextoWeb() {
 
   const selected = scenarios.find((scenario) => scenario.name === selectedScenario)
   const previewSrc = previewOrigin
-    ? `${previewOrigin}${previewPath}?nextoPreview=${previewVersion}`
+    ? `${previewOrigin}${previewPath}?nextDevBridgePreview=${previewVersion}`
     : ''
   const errorEntries = [
     ...buildErrors.map((error, index) => ({
@@ -144,9 +144,9 @@ export function NextoWeb() {
       return
     }
 
-    const source = new EventSource(`${controlOrigin}/api/nexto-events`)
+    const source = new EventSource(`${controlOrigin}/api/next-dev-bridge-events`)
 
-    source.addEventListener('nexto', (message) => {
+    source.addEventListener('next-dev-bridge', (message) => {
       const payload = JSON.parse(message.data)
       const event = payload.event
       const formattedEvent = formatHmrEvent(event)
@@ -184,7 +184,7 @@ export function NextoWeb() {
         return
       }
 
-      if (payload.type === 'nexto:runtime-ready') {
+      if (payload.type === 'next-dev-bridge:runtime-ready') {
         if (
           payload.existing === false &&
           payload.windowId &&
@@ -196,7 +196,7 @@ export function NextoWeb() {
         return
       }
 
-      if (payload.type !== 'nexto:runtime') {
+      if (payload.type !== 'next-dev-bridge:runtime') {
         return
       }
 
@@ -341,7 +341,7 @@ export function NextoWeb() {
 
     frameWindow.postMessage(
       {
-        type: 'nexto:runtime-reset',
+        type: 'next-dev-bridge:runtime-reset',
       },
       previewOrigin || '*'
     )
