@@ -1,7 +1,6 @@
 {
   "name": "next-dev-bridge-web-example",
   "private": true,
-  "type": "module",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
