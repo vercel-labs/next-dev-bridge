@@ -111,7 +111,6 @@ function createStackFrameProxyScript(webOrigin, frameRoot) {
         body: JSON.stringify(payload),
         cache: 'no-store',
         credentials: 'omit',
-        headers: { 'content-type': 'application/json' },
         method: 'POST',
         mode: 'cors',
       })

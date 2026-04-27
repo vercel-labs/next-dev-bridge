@@ -74,13 +74,12 @@ export async function mapStackFrames(
   try {
     const normalizedFrames = normalizeStackFrames(frames, options)
     const requestFetch = options.fetch || fetch
+    const endpoint = getOriginalStackFramesURL(options)
+    const isCrossOriginEndpoint = isCrossOriginURL(endpoint)
     const headers = new Headers(options.headers)
-    headers.set('content-type', 'application/json')
-
-    const response = await requestFetch(getOriginalStackFramesURL(options), {
+    const requestInit: RequestInit = {
       ...options.requestInit,
       method: 'POST',
-      headers,
       body: JSON.stringify({
         frames: normalizedFrames,
         isServer: Boolean(options.isServer),
@@ -88,7 +87,17 @@ export async function mapStackFrames(
         isAppDirectory: options.isAppDirectory !== false,
         sourceOrigin: normalizeOriginValue(options.sourceOrigin),
       }),
-    })
+    }
+
+    if (!isCrossOriginEndpoint) {
+      headers.set('content-type', 'application/json')
+    }
+
+    if (hasHeaders(headers)) {
+      requestInit.headers = headers
+    }
+
+    const response = await requestFetch(endpoint, requestInit)
 
     if (!response.ok || response.status === 204) {
       const reason = await response.text().catch(() => '')
@@ -283,6 +292,27 @@ function normalizeOriginValue(value: string | URL | undefined) {
   } catch {
     return undefined
   }
+}
+
+function isCrossOriginURL(value: string | URL) {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    return new URL(String(value), window.location.href).origin !== window.location.origin
+  } catch {
+    return false
+  }
+}
+
+function hasHeaders(headers: Headers) {
+  let hasHeader = false
+  headers.forEach(() => {
+    hasHeader = true
+  })
+
+  return hasHeader
 }
 
 function getErrorMessage(error: unknown) {

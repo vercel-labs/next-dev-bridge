@@ -95,11 +95,13 @@ describe('observeRuntimeErrors', () => {
       '    at RuntimeEffectClient.useEffect.timer (_0l5b1-n._.js:26:27)',
     ].join('\n')
     let requestBody: any
+    let requestInit: RequestInit | undefined
 
     observeRuntimeErrors((event) => events.push(event), {
       sourceMap: {
         endpoint: 'https://web.example.test/api/next-dev-bridge-stack-frames',
         fetch: async (_url, init) => {
+          requestInit = init
           requestBody = JSON.parse(String(init?.body))
 
           return Response.json([])
@@ -123,6 +125,7 @@ describe('observeRuntimeErrors', () => {
     expect(requestBody.frames[0].file).toBe(
       '/repo/.next/dev/static/chunks/_0l5b1-n._.js'
     )
+    expect(requestInit?.headers).toBeUndefined()
   })
 
   it('captures unhandled promise rejections and dedupes repeated errors', async () => {

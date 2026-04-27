@@ -585,14 +585,8 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
 
   async function mapStackFrames(frames: StackFrame[]) {
     try {
-      const response = await fetch(sourceMapEndpoint, {
-        cache: 'no-store',
-        credentials: isCrossOriginURL(sourceMapEndpoint) ? 'omit' : 'same-origin',
-        method: 'POST',
-        mode: isCrossOriginURL(sourceMapEndpoint) ? 'cors' : 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-        },
+      const isCrossOriginSourceMapEndpoint = isCrossOriginURL(sourceMapEndpoint)
+      const requestInit: RequestInit = {
         body: JSON.stringify({
           frames,
           isServer: false,
@@ -600,6 +594,20 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
           isAppDirectory,
           sourceOrigin: window.location.origin,
         }),
+        cache: 'no-store',
+        credentials: isCrossOriginSourceMapEndpoint ? 'omit' : 'same-origin',
+        method: 'POST',
+        mode: isCrossOriginSourceMapEndpoint ? 'cors' : 'same-origin',
+      }
+
+      if (!isCrossOriginSourceMapEndpoint) {
+        requestInit.headers = {
+          'content-type': 'application/json',
+        }
+      }
+
+      const response = await fetch(sourceMapEndpoint, {
+        ...requestInit,
       })
 
       if (!response.ok || response.status === 204) {

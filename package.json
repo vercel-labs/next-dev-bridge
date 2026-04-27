@@ -49,6 +49,7 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "respinner": "^4.0.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },

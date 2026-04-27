@@ -12,6 +12,7 @@
     "next": "latest",
     "next-dev-bridge": "0.0.1",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "respinner": "^4.0.3"
   }
 }

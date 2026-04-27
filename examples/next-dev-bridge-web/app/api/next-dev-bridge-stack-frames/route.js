@@ -13,7 +13,7 @@ export async function POST(request) {
   let body
 
   try {
-    body = await request.json()
+    body = JSON.parse(await request.text())
   } catch {
     return Response.json(
       {

@@ -420,6 +420,30 @@ h3 {
   text-align: right;
 }
 
+.loadingStatus {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  gap: 7px;
+  vertical-align: middle;
+}
+
+.actionStatus .loadingStatus {
+  justify-content: flex-end;
+}
+
+.loadingStatusText {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusSpinner {
+  flex: 0 0 14px;
+}
+
 .previewWorkbench {
   display: grid;
   grid-template-rows: minmax(0, 2.18fr) minmax(180px, 0.82fr);

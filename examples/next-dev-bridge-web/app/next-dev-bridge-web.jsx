@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { CircularLoading } from 'respinner'
 
 const PREVIEW_ROUTES = [
   { path: '/build-errors', label: 'Build errors', scenario: 'build:syntax' },
@@ -79,6 +80,7 @@ export function NextDevBridgeWeb() {
     errorEntries.length > 0
       ? `${errorEntries.length} error${errorEntries.length === 1 ? '' : 's'}`
       : 'clean'
+  const isStatusBusy = isBusyStatus(applyStatus, previewLoading)
   const hmrLogLines = hmrExpanded
     ? hmrEvents.length > 0
       ? hmrEvents
@@ -669,9 +671,14 @@ export function NextDevBridgeWeb() {
             to the separate preview app.
           </p>
           <p className="previewSessionStatus">
-            {previewOrigin
-              ? `${previewMode || 'local'} preview - ${previewOrigin}`
-              : applyStatus}
+            <LoadingStatus
+              busy={!previewOrigin && isStatusBusy}
+              text={
+                previewOrigin
+                  ? `${previewMode || 'local'} preview - ${previewOrigin}`
+                  : applyStatus
+              }
+            />
           </p>
         </div>
 
@@ -772,7 +779,9 @@ export function NextDevBridgeWeb() {
               Reset
             </button>
           </div>
-          <span className="actionStatus">{applyStatus}</span>
+          <span className="actionStatus">
+            <LoadingStatus busy={isStatusBusy} text={applyStatus} />
+          </span>
         </div>
       </section>
 
@@ -786,7 +795,9 @@ export function NextDevBridgeWeb() {
               title="Separate Next preview app"
             />
           ) : (
-            <div className="previewStarting">{applyStatus}</div>
+            <div className="previewStarting">
+              <LoadingStatus busy={isStatusBusy} text={applyStatus} />
+            </div>
           )}
           {showErrorsOverPreview ? (
             <div
@@ -1085,4 +1096,31 @@ function getRuntimeErrorSignature(error) {
 
 function joinLogParts(parts) {
   return parts.filter(Boolean).join(' ')
+}
+
+function LoadingStatus({ busy, text }) {
+  return (
+    <span className={busy ? 'loadingStatus loadingStatusBusy' : 'loadingStatus'}>
+      {busy ? (
+        <CircularLoading
+          aria-hidden="true"
+          className="statusSpinner"
+          size={14}
+          stroke="currentColor"
+          strokeWidth={3}
+        />
+      ) : null}
+      <span className="loadingStatusText">{text}</span>
+    </span>
+  )
+}
+
+function isBusyStatus(status, previewLoading) {
+  if (previewLoading) {
+    return true
+  }
+
+  return /^(Starting|Writing|Applying|Resetting|Sandbox observer|Sandbox expired)/.test(
+    status || ''
+  )
 }
