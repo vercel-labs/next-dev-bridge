@@ -75,6 +75,54 @@ describe('observeRuntimeErrors', () => {
         },
       },
     })
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        '/__nextjs_original-stack-frames',
+        'http://localhost:3000/runtime-effect'
+      ),
+      expect.objectContaining({
+        method: 'POST',
+      })
+    )
+  })
+
+  it('passes configured source-map options to runtime stack mapping', async () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const error = new Error('effect exploded')
+    error.stack = [
+      'Error: effect exploded',
+      '    at RuntimeEffectClient.useEffect.timer (_0l5b1-n._.js:26:27)',
+    ].join('\n')
+    let requestBody: any
+
+    observeRuntimeErrors((event) => events.push(event), {
+      sourceMap: {
+        endpoint: 'https://web.example.test/api/next-dev-bridge-stack-frames',
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body))
+
+          return Response.json([])
+        },
+        frameRoot: '/repo/.next/dev/static',
+      },
+    })
+
+    fakeWindow.emit('error', {
+      error,
+      message: error.message,
+      filename: 'http://localhost:3000/_next/static/chunks/_0l5b1-n._.js',
+      lineno: 26,
+      colno: 27,
+    })
+    await waitFor(() => events.length === 1)
+
+    expect(requestBody).toMatchObject({
+      sourceOrigin: 'http://localhost:3000',
+    })
+    expect(requestBody.frames[0].file).toBe(
+      '/repo/.next/dev/static/chunks/_0l5b1-n._.js'
+    )
   })
 
   it('captures unhandled promise rejections and dedupes repeated errors', async () => {
@@ -132,6 +180,8 @@ describe('observeRuntimeErrors', () => {
 
   it('creates a self-contained runtime observer script', () => {
     const script = createRuntimeErrorObserverScript({
+      sourceMapEndpoint: 'https://example.com/api/stack-frames',
+      sourceMapFrameRoot: '/repo/.next/dev/static',
       targetOrigin: 'https://example.com',
     })
 
@@ -140,6 +190,8 @@ describe('observeRuntimeErrors', () => {
     expect(script).toContain('next-dev-bridge:runtime')
     expect(script).toContain('next-dev-bridge:runtime-reset')
     expect(script).toContain('https://example.com')
+    expect(script).toContain('https://example.com/api/stack-frames')
+    expect(script).toContain('/repo/.next/dev/static')
     expect(script).not.toContain('</script>')
   })
 })
@@ -149,6 +201,7 @@ function createFakeWindow() {
   const fakeWindow = {
     location: {
       href: 'http://localhost:3000/runtime-effect',
+      origin: 'http://localhost:3000',
     },
     addEventListener(type: string, listener: (event: any) => void) {
       const nextListeners = listeners.get(type) || new Set()

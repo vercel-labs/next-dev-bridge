@@ -935,6 +935,18 @@ function formatRuntimeError(error) {
     for (const frame of frames.slice(0, 5)) {
       lines.push(`    at ${formatRuntimeFrame(frame)}`)
     }
+  } else {
+    const rawFrames = getRawRuntimeFrames(error)
+    if (rawFrames.length > 0) {
+      for (const frame of rawFrames.slice(0, 8)) {
+        lines.push(`    at ${formatRawRuntimeFrame(frame)}`)
+      }
+    } else {
+      const stack = getRuntimeStackFallback(error)
+      if (stack) {
+        lines.push(stack)
+      }
+    }
   }
 
   if (codeFrame) {
@@ -972,6 +984,26 @@ function getSourceMappedRuntimeFrames(error) {
   )
 }
 
+function getRawRuntimeFrames(error) {
+  return (
+    error.mapped?.frames
+      ?.filter((frame) => frame?.file && frame.line1 && frame.column1)
+      .filter((frame) => !isNextDevRuntimeFrame(frame)) || []
+  )
+}
+
+function isNextDevRuntimeFrame(frame) {
+  const file = String(frame.file || '')
+  const methodName = String(frame.methodName || '')
+
+  return (
+    file.includes('/node_modules_next_dist_') ||
+    file.includes('/node_modules_react-dom_') ||
+    file.includes('/node_modules_0') ||
+    methodName.includes('schedulePerformWorkUntilDeadline')
+  )
+}
+
 function isSourceMappedFrame(frame) {
   if (!frame) {
     return false
@@ -1003,6 +1035,18 @@ function formatRuntimeFrame(frame) {
   return `${file}${line}${column}`
 }
 
+function formatRawRuntimeFrame(frame) {
+  const methodName =
+    frame.methodName && frame.methodName !== '<anonymous>'
+      ? `${frame.methodName} `
+      : ''
+  const file = getRuntimeFrameFileName(frame.file)
+  const line = frame.line1 ? `:${frame.line1}` : ''
+  const column = frame.column1 ? `:${frame.column1}` : ''
+
+  return `${methodName}(${file}${line}${column})`
+}
+
 function getRuntimeFrameFileName(file) {
   if (!file || typeof file !== 'string') {
     return '<unknown>'
@@ -1010,6 +1054,21 @@ function getRuntimeFrameFileName(file) {
 
   const cleanFile = file.split('?')[0]
   return cleanFile.split(/[\\/]/).pop() || cleanFile
+}
+
+function getRuntimeStackFallback(error) {
+  const stack = stripAnsi(error.stack || '')
+  if (!stack) {
+    return ''
+  }
+
+  const lines = stack.split('\n')
+  const firstFrameIndex = lines.findIndex((line) => line.trim().startsWith('at '))
+  if (firstFrameIndex === -1) {
+    return ''
+  }
+
+  return lines.slice(firstFrameIndex, firstFrameIndex + 8).join('\n')
 }
 
 function stripAnsi(value) {

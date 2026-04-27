@@ -52,7 +52,7 @@ describe('Next dev source-map helpers', () => {
       isAppDirectory: true,
     })
     expect(requestBody.frames[0].file).toBe(
-      'http://localhost:3000/_next/static/chunks/app/runtime-effect.js'
+      '/_next/static/chunks/app/runtime-effect.js'
     )
     expect(mappedFrames[0]).toMatchObject({
       status: 'fulfilled',
@@ -63,6 +63,101 @@ describe('Next dev source-map helpers', () => {
         },
       },
     })
+  })
+
+  it('normalizes bare Turbopack chunk names before source mapping', async () => {
+    let requestBody: any
+
+    await mapStackFrames(
+      [
+        {
+          file: '_0l5b1-n._.js',
+          methodName: 'RuntimeEffectClient.useEffect.timer',
+          arguments: [],
+          line1: 26,
+          column1: 27,
+        },
+      ],
+      {
+        url: 'https://preview.example.test/runtime-effect',
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body))
+
+          return Response.json([
+            {
+              status: 'fulfilled',
+              value: {
+                originalStackFrame: {
+                  file: 'app/runtime-effect/runtime-effect-client.jsx',
+                  line1: 24,
+                  column1: 15,
+                },
+              },
+            },
+          ])
+        },
+      }
+    )
+
+    expect(requestBody.frames[0].file).toBe(
+      '/_next/static/chunks/_0l5b1-n._.js'
+    )
+  })
+
+  it('uses the runtime event filename when the stack only has a basename', async () => {
+    let requestBody: any
+
+    const mapped = await mapErrorStack(
+      {
+        message: 'boom',
+        stack: [
+          'Error: boom',
+          '    at RuntimeEffectClient.useEffect.timer (_0l5b1-n._.js:26:27)',
+        ].join('\n'),
+      },
+      {
+        fallbackFile:
+          'https://preview.example.test/_next/static/chunks/_0l5b1-n._.js',
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body))
+
+          return Response.json([])
+        },
+      }
+    )
+
+    expect(mapped.frames[0].file).toBe('/_next/static/chunks/_0l5b1-n._.js')
+    expect(requestBody.frames[0].file).toBe(
+      '/_next/static/chunks/_0l5b1-n._.js'
+    )
+  })
+
+  it('can send dev-server filesystem chunk paths to Next source mapping', async () => {
+    let requestBody: any
+
+    await mapStackFrames(
+      [
+        {
+          file: 'http://localhost:3000/_next/static/chunks/_0l5b1-n._.js',
+          methodName: 'RuntimeEffectClient.useEffect.timer',
+          arguments: [],
+          line1: 26,
+          column1: 27,
+        },
+      ],
+      {
+        frameRoot: '/repo/.next/dev/static',
+        fetch: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body))
+
+          return Response.json([])
+        },
+      }
+    )
+
+    expect(requestBody.frames[0].file).toBe(
+      '/repo/.next/dev/static/chunks/_0l5b1-n._.js'
+    )
   })
 
   it('maps an error-like object with a stack', async () => {
@@ -94,7 +189,7 @@ describe('Next dev source-map helpers', () => {
       message: 'boom',
       frames: [
         {
-          file: 'http://localhost:3000/_next/static/chunks/app.js',
+          file: '/_next/static/chunks/app.js',
           methodName: 'RuntimeEffectClient.useEffect',
           line1: 14,
           column1: 7,

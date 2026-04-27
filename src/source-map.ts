@@ -31,10 +31,15 @@ export type SourceMappedStackFrame =
 
 export interface SourceMapOptions {
   endpoint?: string | URL
+  fallbackFile?: string | URL
+  frameRoot?: string | URL
   fetch?: typeof fetch
+  headers?: HeadersInit
   isAppDirectory?: boolean
   isEdgeServer?: boolean
   isServer?: boolean
+  requestInit?: Omit<RequestInit, 'body' | 'headers' | 'method'>
+  sourceOrigin?: string | URL
   url?: string | URL
 }
 
@@ -51,7 +56,7 @@ export async function mapErrorStack(
 ): Promise<MappedErrorStack> {
   const message = getErrorMessage(error)
   const stack = getErrorStack(error)
-  const frames = parseStack(stack)
+  const frames = normalizeStackFrames(parseStack(stack), options)
 
   return {
     message,
@@ -67,23 +72,27 @@ export async function mapStackFrames(
   options: SourceMapOptions = {}
 ): Promise<SourceMappedStackFrame[]> {
   try {
+    const normalizedFrames = normalizeStackFrames(frames, options)
     const requestFetch = options.fetch || fetch
+    const headers = new Headers(options.headers)
+    headers.set('content-type', 'application/json')
+
     const response = await requestFetch(getOriginalStackFramesURL(options), {
+      ...options.requestInit,
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
-        frames,
+        frames: normalizedFrames,
         isServer: Boolean(options.isServer),
         isEdgeServer: Boolean(options.isEdgeServer),
         isAppDirectory: options.isAppDirectory !== false,
+        sourceOrigin: normalizeOriginValue(options.sourceOrigin),
       }),
     })
 
     if (!response.ok || response.status === 204) {
       const reason = await response.text().catch(() => '')
-      return frames.map(() => ({
+      return normalizedFrames.map(() => ({
         status: 'rejected',
         reason:
           reason || 'No original stack frame response from Next dev server.',
@@ -151,6 +160,103 @@ function parseStackLine(line: string): StackFrame | null {
   }
 }
 
+export function normalizeStackFrames(
+  frames: StackFrame[],
+  options: Pick<SourceMapOptions, 'fallbackFile' | 'frameRoot' | 'url'> = {}
+): StackFrame[] {
+  return frames.map((frame) => ({
+    ...frame,
+    file: normalizeStackFrameFile(frame.file, options),
+  }))
+}
+
+function normalizeStackFrameFile(
+  file: unknown,
+  options: Pick<SourceMapOptions, 'fallbackFile' | 'frameRoot' | 'url'>
+) {
+  if (typeof file !== 'string' || file.length === 0) {
+    return undefined
+  }
+
+  const nextAssetPath = getNextAssetPath(file)
+  if (nextAssetPath) {
+    return formatNextAssetFrameFile(nextAssetPath, options.frameRoot)
+  }
+
+  if (isAbsoluteOrVirtualFrameFile(file)) {
+    return file
+  }
+
+  const fallbackFile = String(options.fallbackFile || '')
+  if (fallbackFile && getBasename(fallbackFile) === getBasename(file)) {
+    const fallbackNextAssetPath = getNextAssetPath(fallbackFile)
+    return fallbackNextAssetPath
+      ? formatNextAssetFrameFile(fallbackNextAssetPath, options.frameRoot)
+      : fallbackFile
+  }
+
+  const normalizedFile = file.startsWith('_next/') ? `/${file}` : file
+  if (normalizedFile.startsWith('/_next/')) {
+    return formatNextAssetFrameFile(normalizedFile, options.frameRoot)
+  }
+
+  if (isLikelyNextChunkFile(normalizedFile)) {
+    return formatNextAssetFrameFile(
+      `/_next/static/chunks/${normalizedFile}`,
+      options.frameRoot
+    )
+  }
+
+  return file
+}
+
+function formatNextAssetFrameFile(nextAssetPath: string, frameRoot?: string | URL) {
+  if (!frameRoot) {
+    return nextAssetPath
+  }
+
+  const root = String(frameRoot).replace(/\/+$/, '')
+  const relativeAssetPath = nextAssetPath.replace(/^\/_next\/static\/?/, '')
+
+  return `${root}/${relativeAssetPath}`
+}
+
+function getNextAssetPath(file: string) {
+  if (file.startsWith('/_next/')) {
+    return file
+  }
+
+  if (file.startsWith('_next/')) {
+    return `/${file}`
+  }
+
+  try {
+    const url = new URL(file)
+    return url.pathname.startsWith('/_next/') ? url.pathname : ''
+  } catch {
+    return ''
+  }
+}
+
+function isAbsoluteOrVirtualFrameFile(file: string) {
+  return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(file)
+}
+
+function isLikelyNextChunkFile(file: string) {
+  return (
+    !file.includes('/') &&
+    file.endsWith('.js') &&
+    (file.startsWith('_') ||
+      file.includes('._.') ||
+      file.startsWith('node_modules_') ||
+      file.startsWith('turbopack-'))
+  )
+}
+
+function getBasename(file: string) {
+  return file.split('?')[0].split(/[\\/]/).pop() || file
+}
+
 function getOriginalStackFramesURL(options: SourceMapOptions) {
   if (options.endpoint) {
     return options.endpoint
@@ -165,6 +271,18 @@ function getOriginalStackFramesURL(options: SourceMapOptions) {
   }
 
   return new URL('/__nextjs_original-stack-frames', 'http://localhost:3000')
+}
+
+function normalizeOriginValue(value: string | URL | undefined) {
+  if (!value) {
+    return undefined
+  }
+
+  try {
+    return new URL(String(value)).origin
+  } catch {
+    return undefined
+  }
 }
 
 function getErrorMessage(error: unknown) {

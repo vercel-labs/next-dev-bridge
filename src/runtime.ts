@@ -1,6 +1,7 @@
 import {
   mapErrorStack,
   type MappedErrorStack,
+  type SourceMapOptions,
   type StackFrame,
 } from './source-map.js'
 
@@ -42,6 +43,7 @@ export type RuntimeErrorListener = (
 export interface RuntimeErrorObserverOptions {
   dedupe?: boolean
   now?: () => Date | number | string
+  sourceMap?: SourceMapOptions
 }
 
 export interface RuntimeErrorObserverScriptOptions {
@@ -52,6 +54,8 @@ export interface RuntimeErrorObserverScriptOptions {
   readyMessageType?: string
   resetOnRefresh?: boolean
   resetMessageType?: string
+  sourceMapEndpoint?: string
+  sourceMapFrameRoot?: string
   targetOrigin?: string
 }
 
@@ -99,7 +103,7 @@ export function observeRuntimeErrors(
       at: timestamp(options),
     }
 
-    entry.mapped = await mapErrorStack(entry)
+    entry.mapped = await mapErrorStack(entry, getRuntimeSourceMapOptions(entry))
 
     state.errors = [...state.errors, entry]
     emit(
@@ -142,6 +146,14 @@ export function observeRuntimeErrors(
   function emit(event: RuntimeErrorEvent, nextState: RuntimeErrorState) {
     if (listener) {
       listener(event, cloneRuntimeState(nextState))
+    }
+  }
+
+  function getRuntimeSourceMapOptions(error: RuntimeErrorInfo): SourceMapOptions {
+    return {
+      ...options.sourceMap,
+      fallbackFile: options.sourceMap?.fallbackFile || error.filename,
+      sourceOrigin: options.sourceMap?.sourceOrigin || getWindowLocationOrigin(),
     }
   }
 }
@@ -297,6 +309,14 @@ function safeStringify(value: unknown) {
   }
 }
 
+function getWindowLocationOrigin() {
+  try {
+    return window.location.origin
+  } catch {
+    return undefined
+  }
+}
+
 function serializeScriptOptions(options: RuntimeErrorObserverScriptOptions) {
   return JSON.stringify(options)
     .replace(/</g, '\\u003c')
@@ -316,6 +336,14 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const shouldDedupe = options.dedupe !== false
   const shouldResetOnRefresh = options.resetOnRefresh !== false
   const isAppDirectory = options.isAppDirectory !== false
+  const sourceMapEndpoint =
+    typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
+      ? options.sourceMapEndpoint
+      : '/__nextjs_original-stack-frames'
+  const sourceMapFrameRoot =
+    typeof options.sourceMapFrameRoot === 'string' && options.sourceMapFrameRoot
+      ? options.sourceMapFrameRoot.replace(/\/+$/, '')
+      : ''
 
   if (existing) {
     post(readyMessageType, {
@@ -545,7 +573,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   }
 
   async function mapStackBearingError(error: RuntimeErrorInfo) {
-    const frames = parseStack(error.stack)
+    const frames = normalizeStackFrames(parseStack(error.stack), error.filename)
 
     return {
       message: error.message,
@@ -557,8 +585,11 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
 
   async function mapStackFrames(frames: StackFrame[]) {
     try {
-      const response = await fetch('/__nextjs_original-stack-frames', {
+      const response = await fetch(sourceMapEndpoint, {
+        cache: 'no-store',
+        credentials: isCrossOriginURL(sourceMapEndpoint) ? 'omit' : 'same-origin',
         method: 'POST',
+        mode: isCrossOriginURL(sourceMapEndpoint) ? 'cors' : 'same-origin',
         headers: {
           'content-type': 'application/json',
         },
@@ -567,6 +598,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
           isServer: false,
           isEdgeServer: false,
           isAppDirectory,
+          sourceOrigin: window.location.origin,
         }),
       })
 
@@ -599,6 +631,104 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
         status: 'rejected',
         reason: error instanceof Error ? error.message : String(error),
       }))
+    }
+  }
+
+  function normalizeStackFrames(
+    frames: StackFrame[],
+    fallbackFile?: string
+  ): StackFrame[] {
+    return frames.map((frame) => ({
+      ...frame,
+      file: normalizeStackFrameFile(frame.file, fallbackFile),
+    }))
+  }
+
+  function normalizeStackFrameFile(file: unknown, fallbackFile?: string) {
+    if (typeof file !== 'string' || file.length === 0) {
+      return undefined
+    }
+
+    const nextAssetPath = getNextAssetPath(file)
+    if (nextAssetPath) {
+      return formatNextAssetFrameFile(nextAssetPath)
+    }
+
+    if (isAbsoluteOrVirtualFrameFile(file)) {
+      return file
+    }
+
+    if (fallbackFile && getBasename(fallbackFile) === getBasename(file)) {
+      const fallbackNextAssetPath = getNextAssetPath(fallbackFile)
+      return fallbackNextAssetPath
+        ? formatNextAssetFrameFile(fallbackNextAssetPath)
+        : fallbackFile
+    }
+
+    const normalizedFile = file.startsWith('_next/') ? `/${file}` : file
+    if (normalizedFile.startsWith('/_next/')) {
+      return formatNextAssetFrameFile(normalizedFile)
+    }
+
+    if (isLikelyNextChunkFile(normalizedFile)) {
+      return formatNextAssetFrameFile(`/_next/static/chunks/${normalizedFile}`)
+    }
+
+    return file
+  }
+
+  function formatNextAssetFrameFile(nextAssetPath: string) {
+    if (!sourceMapFrameRoot) {
+      return nextAssetPath
+    }
+
+    return `${sourceMapFrameRoot}/${nextAssetPath.replace(
+      /^\/_next\/static\/?/,
+      ''
+    )}`
+  }
+
+  function getNextAssetPath(file: string) {
+    if (file.startsWith('/_next/')) {
+      return file
+    }
+
+    if (file.startsWith('_next/')) {
+      return `/${file}`
+    }
+
+    try {
+      const url = new URL(file)
+      return url.pathname.startsWith('/_next/') ? url.pathname : ''
+    } catch {
+      return ''
+    }
+  }
+
+  function isAbsoluteOrVirtualFrameFile(file: string) {
+    return /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(file)
+  }
+
+  function isLikelyNextChunkFile(file: string) {
+    return (
+      !file.includes('/') &&
+      file.endsWith('.js') &&
+      (file.startsWith('_') ||
+        file.includes('._.') ||
+        file.startsWith('node_modules_') ||
+        file.startsWith('turbopack-'))
+    )
+  }
+
+  function getBasename(file: string) {
+    return file.split('?')[0].split(/[\\/]/).pop() || file
+  }
+
+  function isCrossOriginURL(value: string) {
+    try {
+      return new URL(value, window.location.href).origin !== window.location.origin
+    } catch {
+      return false
     }
   }
 

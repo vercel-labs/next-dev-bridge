@@ -36,6 +36,7 @@ processes.start('preview', NODE_BIN, [
   cwd: PREVIEW_ROOT,
   env: {
     ...process.env,
+    NEXT_DEV_BRIDGE_WEB_ORIGIN: `http://127.0.0.1:${WEB_PORT}`,
     NEXT_TELEMETRY_DISABLED: '1',
   },
   stdio: 'inherit',
