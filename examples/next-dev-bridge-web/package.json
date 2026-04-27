@@ -3,16 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "npx --no-install tsc -p ../../tsconfig.json && next build",
     "dev": "next dev",
     "start": "next start"
   },
   "dependencies": {
     "@vercel/sandbox": "latest",
     "next": "latest",
-    "next-dev-bridge": "0.0.1",
+    "next-dev-bridge": "file:../..",
     "react": "latest",
     "react-dom": "latest",
     "respinner": "^4.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }
