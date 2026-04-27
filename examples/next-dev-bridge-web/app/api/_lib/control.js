@@ -32,8 +32,42 @@ const PROBE_DEFAULT_ATTEMPTS = Number(
   process.env.NEXT_DEV_BRIDGE_PROBE_DEFAULT_ATTEMPTS || 4
 )
 const FIXTURE_VERSION =
-  '2026-04-27-runtime-errors-explicit-reset-only'
+  '2026-04-27-file-parent-library-root'
 const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
+const LIBRARY_PACKAGE_FILE_PATHS = [
+  'package.json',
+  'tsconfig.json',
+  'README.md',
+  'src/cli.ts',
+  'src/client-observer.ts',
+  'src/client.ts',
+  'src/errors.ts',
+  'src/index.ts',
+  'src/observer.ts',
+  'src/processor.ts',
+  'src/runtime.ts',
+  'src/source-map.ts',
+  'src/websocket.ts',
+]
+const PREVIEW_FIXTURE_FILE_PATHS = [
+  'app/api/next-dev-bridge-stack-frames/route.js',
+  'app/build-errors/page.jsx',
+  'app/build-errors/subject.js',
+  'app/globals.css',
+  'app/layout.jsx',
+  'app/page.jsx',
+  'app/runtime-effect/page.jsx',
+  'app/runtime-effect/runtime-effect-client.jsx',
+  'app/runtime-errors/page.jsx',
+  'app/runtime-errors/runtime-error-client.jsx',
+  'app/runtime-errors/runtime-mode.js',
+  'dev-server.cjs',
+  'instrumentation-client.js',
+  'next-dev-bridge-hide-nextjs-portal.js',
+  'next.config.mjs',
+  'package.json',
+  'scenarios.cjs',
+]
 const SESSION_COOKIE = 'next-dev-bridge-sandbox'
 const COOKIE_MAX_AGE_SECONDS = Math.max(
   60,
@@ -367,34 +401,84 @@ async function ensureSandboxPrepared(sandbox) {
     fixtureUpdated = true
   }
 
-  const check = await sandbox.runCommand({
+  const libraryUpdated = await ensureSandboxLibraryPackage(sandbox, {
+    force: fixtureUpdated,
+  })
+
+  const previewDependenciesCheck = await sandbox.runCommand({
     cmd: 'sh',
     args: ['-lc', 'test -x node_modules/.bin/next'],
     cwd: SANDBOX_PREVIEW_ROOT,
   })
 
-  if (check.exitCode === 0) {
-    if (fixtureUpdated) {
-      await runCheckedCommand(sandbox, 'reset preview fixture', {
-        cmd: 'node',
-        args: ['scenarios.cjs', 'reset'],
-        cwd: SANDBOX_PREVIEW_ROOT,
-      })
-    }
-    return fixtureUpdated
+  let previewUpdated = false
+
+  if (fixtureUpdated || previewDependenciesCheck.exitCode !== 0) {
+    await runCheckedCommand(sandbox, 'install preview dependencies', {
+      cmd: 'npm',
+      args: ['install'],
+      cwd: SANDBOX_PREVIEW_ROOT,
+      env: {
+        NEXT_TELEMETRY_DISABLED: '1',
+      },
+    })
+    previewUpdated = true
   }
 
-  await runCheckedCommand(sandbox, 'install dependencies', {
-    cmd: 'npm',
-    args: ['install'],
-    cwd: SANDBOX_PREVIEW_ROOT,
+  if (fixtureUpdated || previewUpdated) {
+    await runCheckedCommand(sandbox, 'reset preview fixture', {
+      cmd: 'node',
+      args: ['scenarios.cjs', 'reset'],
+      cwd: SANDBOX_PREVIEW_ROOT,
+    })
+  }
+
+  return fixtureUpdated || libraryUpdated || previewUpdated
+}
+
+async function ensureSandboxLibraryPackage(sandbox, options = {}) {
+  const dependenciesCheck = await sandbox.runCommand({
+    cmd: 'sh',
+    args: ['-lc', 'test -x node_modules/.bin/tsc'],
+    cwd: SANDBOX_ROOT,
   })
-  await runCheckedCommand(sandbox, 'reset preview fixture', {
-    cmd: 'node',
-    args: ['scenarios.cjs', 'reset'],
-    cwd: SANDBOX_PREVIEW_ROOT,
+
+  let updated = false
+
+  if (options.force || dependenciesCheck.exitCode !== 0) {
+    await runCheckedCommand(sandbox, 'install library dependencies', {
+      cmd: 'npm',
+      args: ['install', '--include=dev'],
+      cwd: SANDBOX_ROOT,
+      env: {
+        NEXT_TELEMETRY_DISABLED: '1',
+      },
+    })
+    updated = true
+  }
+
+  const buildCheck = await sandbox.runCommand({
+    cmd: 'sh',
+    args: [
+      '-lc',
+      'test -f dist/index.js && test -f dist/client.js && test -f dist/runtime.js',
+    ],
+    cwd: SANDBOX_ROOT,
   })
-  return true
+
+  if (options.force || buildCheck.exitCode !== 0) {
+    await runCheckedCommand(sandbox, 'build library package', {
+      cmd: 'npm',
+      args: ['run', 'build'],
+      cwd: SANDBOX_ROOT,
+      env: {
+        NEXT_TELEMETRY_DISABLED: '1',
+      },
+    })
+    updated = true
+  }
+
+  return updated
 }
 
 async function ensurePreviewDevServer(sandbox, options = {}) {
@@ -720,10 +804,16 @@ async function importSandbox() {
 }
 
 async function writePreviewFixtureToSandbox(sandbox) {
-  const files = getPreviewFixtureFiles().map((file) => ({
-    path: `${SANDBOX_PREVIEW_ROOT}/${file.relativePath}`,
-    content: file.content,
-  }))
+  const files = [
+    ...getLibraryPackageFiles().map((file) => ({
+      path: `${SANDBOX_ROOT}/${file.relativePath}`,
+      content: file.content,
+    })),
+    ...getPreviewFixtureFiles().map((file) => ({
+      path: `${SANDBOX_PREVIEW_ROOT}/${file.relativePath}`,
+      content: file.content,
+    })),
+  ]
 
   files.push({
     path: `${SANDBOX_PREVIEW_ROOT}/${FIXTURE_VERSION_FILE}`,
@@ -735,20 +825,62 @@ async function writePreviewFixtureToSandbox(sandbox) {
 
 function getPreviewFixtureFiles() {
   const root = getPreviewFixtureRoot()
-  return readFixtureFiles(root, root)
+  return readKnownFiles(root, PREVIEW_FIXTURE_FILE_PATHS)
+}
+
+function getLibraryPackageFiles() {
+  const root = getLibraryPackageRoot()
+  return readKnownFiles(root, LIBRARY_PACKAGE_FILE_PATHS)
+}
+
+function getLibraryPackageRoot() {
+  const candidates = [
+    path.resolve(/*turbopackIgnore: true*/ process.cwd(), '..', '..'),
+    /*turbopackIgnore: true*/ process.cwd(),
+    path.resolve(
+      /*turbopackIgnore: true*/ process.cwd(),
+      'node_modules',
+      'next-dev-bridge'
+    ),
+  ]
+
+  for (const candidate of candidates) {
+    const packageJsonPath = path.join(candidate, 'package.json')
+    const runtimePath = path.join(candidate, 'src', 'runtime.ts')
+
+    if (
+      !fs.existsSync(/*turbopackIgnore: true*/ packageJsonPath) ||
+      !fs.existsSync(/*turbopackIgnore: true*/ runtimePath)
+    ) {
+      continue
+    }
+
+    try {
+      const packageJson = JSON.parse(
+        fs.readFileSync(/*turbopackIgnore: true*/ packageJsonPath, 'utf8')
+      )
+      if (packageJson.name === 'next-dev-bridge') {
+        return candidate
+      }
+    } catch {}
+  }
+
+  throw new Error('Cannot find the next-dev-bridge package root.')
 }
 
 function getPreviewFixtureRoot() {
   const candidates = [
-    path.resolve(process.cwd(), 'preview-fixture'),
+    path.resolve(/*turbopackIgnore: true*/ process.cwd(), 'preview-fixture'),
     path.resolve(
-      process.cwd(),
+      /*turbopackIgnore: true*/ process.cwd(),
       'examples',
       'next-dev-bridge-web',
       'preview-fixture'
     ),
   ]
-  const fixtureRoot = candidates.find((candidate) => fs.existsSync(candidate))
+  const fixtureRoot = candidates.find((candidate) =>
+    fs.existsSync(/*turbopackIgnore: true*/ candidate)
+  )
 
   if (!fixtureRoot) {
     throw new Error('Cannot find examples/next-dev-bridge-web/preview-fixture.')
@@ -757,31 +889,14 @@ function getPreviewFixtureRoot() {
   return fixtureRoot
 }
 
-function readFixtureFiles(directory, root) {
-  const files = []
-
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === '.DS_Store' || entry.name === 'node_modules') {
-      continue
+function readKnownFiles(root, relativePaths) {
+  return relativePaths.map((relativePath) => {
+    const filePath = path.join(root, relativePath)
+    return {
+      content: fs.readFileSync(/*turbopackIgnore: true*/ filePath),
+      relativePath,
     }
-
-    const absolutePath = path.join(directory, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...readFixtureFiles(absolutePath, root))
-      continue
-    }
-
-    if (!entry.isFile()) {
-      continue
-    }
-
-    files.push({
-      content: fs.readFileSync(absolutePath),
-      relativePath: path.relative(root, absolutePath).split(path.sep).join('/'),
-    })
-  }
-
-  return files
+  })
 }
 
 function shellQuote(value) {
