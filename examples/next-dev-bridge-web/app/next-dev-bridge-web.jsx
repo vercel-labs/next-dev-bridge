@@ -432,6 +432,7 @@ export function NextDevBridgeWeb() {
 
     suppressBuildErrorsRef.current = false
     setApplyStatus(`Writing ${editPath}`)
+    clearVisibleErrors(false)
 
     if (selectedScenario && selected?.edits?.length > 1) {
       const scenarioResponse = await fetch(
@@ -490,6 +491,7 @@ export function NextDevBridgeWeb() {
     suppressBuildErrorsRef.current = name === 'reset'
     pendingResetPreviewRef.current = name === 'reset'
     setApplyStatus(`Applying ${name}`)
+    clearVisibleErrors(name === 'reset')
 
     const response = await fetch(
       buildApiUrl(controlOrigin, '/api/test-edits', sessionParams()),
@@ -520,7 +522,6 @@ export function NextDevBridgeWeb() {
     if (name !== 'reset') {
       reloadPreviewAfterEdit()
     }
-    clearVisibleErrors(name === 'reset')
     applyProbePayload(payload.probe)
     setApplyStatus(
       name === 'reset' ? 'Reset written' : `Applied ${name}`
