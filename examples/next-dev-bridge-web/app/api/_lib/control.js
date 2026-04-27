@@ -32,7 +32,7 @@ const PROBE_DEFAULT_ATTEMPTS = Number(
   process.env.NEXT_DEV_BRIDGE_PROBE_DEFAULT_ATTEMPTS || 4
 )
 const FIXTURE_VERSION =
-  '2026-04-27-preview-stack-frame-internal-origin'
+  '2026-04-27-stack-frame-origin-fallbacks'
 const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
 const SESSION_COOKIE = 'next-dev-bridge-sandbox'
 const COOKIE_MAX_AGE_SECONDS = Math.max(
@@ -415,10 +415,12 @@ async function ensurePreviewDevServer(sandbox, options = {}) {
     cwd: SANDBOX_PREVIEW_ROOT,
     detached: true,
     env: {
+      NEXT_DEV_BRIDGE_INTERNAL_ORIGIN: `http://127.0.0.1:${SANDBOX_PORT}`,
       NEXT_DEV_BRIDGE_PREVIEW_ORIGIN: previewOrigin,
       NEXT_DEV_BRIDGE_WEB_ORIGIN:
         process.env.NEXT_DEV_BRIDGE_WEB_ORIGIN || process.env.VERCEL_URL || '',
       NEXT_TELEMETRY_DISABLED: '1',
+      PORT: String(SANDBOX_PORT),
     },
   })
 

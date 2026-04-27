@@ -395,8 +395,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     } as RuntimeErrorInfo
     lastRuntimeErrorAt = Date.now()
 
-    entry.mapped = await mapStackBearingError(entry)
-
     state.errors = [...state.errors, entry]
     post(messageType, {
       event: {
@@ -408,6 +406,29 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       href: window.location.href,
       windowId,
     })
+
+    void mapStackBearingError(entry)
+      .then((mapped) => {
+        if (!state.errors.some((error) => error.id === entry.id)) {
+          return
+        }
+
+        entry.mapped = mapped
+        state.errors = state.errors.map((error) =>
+          error.id === entry.id ? entry : error
+        )
+        post(messageType, {
+          event: {
+            type: 'runtime:error',
+            error: entry,
+            errors: state.errors,
+          },
+          state,
+          href: window.location.href,
+          windowId,
+        })
+      })
+      .catch(() => {})
   }
 
   function reset() {

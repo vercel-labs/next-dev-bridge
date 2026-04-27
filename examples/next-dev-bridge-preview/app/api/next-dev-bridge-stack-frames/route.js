@@ -34,50 +34,33 @@ export async function POST(request) {
     )
   }
 
-  let response
+  const frames = Array.isArray(body.frames) ? body.frames : []
+  const result = await fetchOriginalStackFrames({
+    origins: getOriginalStackFrameOrigins(request, internalOrigin, sourceOrigin),
+    payload: {
+      frames,
+      isServer: Boolean(body.isServer),
+      isEdgeServer: Boolean(body.isEdgeServer),
+      isAppDirectory: body.isAppDirectory !== false,
+    },
+    sourceOrigin,
+  })
 
-  try {
-    response = await fetch(
-      new URL('/__nextjs_original-stack-frames', internalOrigin),
-      {
-        body: JSON.stringify({
-          frames: Array.isArray(body.frames) ? body.frames : [],
-          isServer: Boolean(body.isServer),
-          isEdgeServer: Boolean(body.isEdgeServer),
-          isAppDirectory: body.isAppDirectory !== false,
-        }),
-        cache: 'no-store',
-        headers: {
-          'content-type': 'application/json',
-          origin: sourceOrigin,
-          referer: `${sourceOrigin}/`,
-        },
-        method: 'POST',
-      }
-    )
-  } catch (error) {
-    return Response.json(
-      {
-        error: error instanceof Error ? error.message : String(error),
+  if (!result.ok) {
+    return Response.json(rejectFrames(frames, result.reason), {
+      headers: {
+        'cache-control': 'no-store',
       },
-      {
-        status: 502,
-      }
-    )
+      status: 200,
+    })
   }
 
-  const responseBody =
-    response.status === 204 || response.status === 304
-      ? null
-      : await response.text()
-
-  return new Response(responseBody, {
+  return new Response(result.body, {
     headers: {
       'cache-control': 'no-store',
-      'content-type':
-        response.headers.get('content-type') || 'application/json; charset=utf-8',
+      'content-type': result.contentType || 'application/json; charset=utf-8',
     },
-    status: response.status,
+    status: result.status,
   })
 }
 
@@ -126,6 +109,14 @@ function getRequestOrigins(request) {
 
 function getInternalOrigin(request) {
   const requestUrl = new URL(request.url)
+  const configuredOrigin = normalizeOrigin(
+    process.env.NEXT_DEV_BRIDGE_INTERNAL_ORIGIN
+  )
+
+  if (configuredOrigin) {
+    return configuredOrigin
+  }
+
   const localHost = splitHeader(request.headers.get('host')).find((host) =>
     isLocalHostHeader(host)
   )
@@ -143,6 +134,76 @@ function getInternalOrigin(request) {
   }
 
   return requestUrl.origin
+}
+
+function getOriginalStackFrameOrigins(request, internalOrigin, sourceOrigin) {
+  const origins = new Set()
+  addOrigin(origins, process.env.NEXT_DEV_BRIDGE_INTERNAL_ORIGIN)
+  addOrigin(origins, internalOrigin)
+  addOrigin(origins, new URL(request.url).origin)
+  addOrigin(origins, sourceOrigin)
+  return [...origins]
+}
+
+async function fetchOriginalStackFrames({ origins, payload, sourceOrigin }) {
+  const body = JSON.stringify(payload)
+  const failures = []
+
+  for (const origin of origins) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+
+    try {
+      const response = await fetch(
+        new URL('/__nextjs_original-stack-frames', origin),
+        {
+          body,
+          cache: 'no-store',
+          headers: {
+            'content-type': 'application/json',
+            origin: sourceOrigin,
+            referer: `${sourceOrigin}/`,
+          },
+          method: 'POST',
+          signal: controller.signal,
+        }
+      )
+      const responseBody =
+        response.status === 204 || response.status === 304
+          ? null
+          : await response.text()
+
+      if (response.ok) {
+        return {
+          body: responseBody,
+          contentType: response.headers.get('content-type'),
+          ok: true,
+          status: response.status,
+        }
+      }
+
+      failures.push(`${origin} returned ${response.status}: ${responseBody}`)
+    } catch (error) {
+      failures.push(
+        `${origin} failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  return {
+    ok: false,
+    reason:
+      failures.join('; ') || 'Failed to reach Next dev stack-frame endpoint.',
+  }
+}
+
+function rejectFrames(frames, reason) {
+  return frames.map(() => ({
+    status: 'rejected',
+    reason,
+  }))
 }
 
 function addOrigin(origins, value) {

@@ -324,12 +324,17 @@ export function NextDevBridgeWeb() {
 
         setRuntimeErrors((currentErrors) => {
           const signature = getRuntimeErrorSignature(nextError)
-          if (
-            currentErrors.some(
-              (error) => getRuntimeErrorSignature(error) === signature
-            )
-          ) {
-            return currentErrors
+          const existingIndex = currentErrors.findIndex(
+            (error) => getRuntimeErrorSignature(error) === signature
+          )
+
+          if (existingIndex !== -1) {
+            const nextErrors = [...currentErrors]
+            nextErrors[existingIndex] = {
+              ...nextErrors[existingIndex],
+              ...nextError,
+            }
+            return nextErrors
           }
 
           return [...currentErrors, nextError]

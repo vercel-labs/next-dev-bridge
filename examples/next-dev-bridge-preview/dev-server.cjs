@@ -24,6 +24,10 @@ const hostname = readArg(
   process.env.HOSTNAME || process.env.HOST || '0.0.0.0'
 )
 
+process.env.PORT = String(port)
+process.env.NEXT_DEV_BRIDGE_INTERNAL_ORIGIN =
+  process.env.NEXT_DEV_BRIDGE_INTERNAL_ORIGIN || `http://127.0.0.1:${port}`
+
 let handle = (_request, response) => {
   response.statusCode = 503
   response.end('Next dev server is starting.')
