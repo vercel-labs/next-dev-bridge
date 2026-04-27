@@ -1,76 +1,18 @@
 # next-dev-bridge API
 
-`next-dev-bridge` exposes one Node API and one browser API for the common paths:
+`next-dev-bridge` exposes browser APIs, a CLI, and a Node API for the common
+paths:
 
 ```ts
-import { connect } from 'next-dev-bridge'
 import { observeNextDev } from 'next-dev-bridge/client'
-```
-
-Use `connect()` from `next-dev-bridge` in Node to attach to a running Next dev server. Use `observeNextDev()` from `next-dev-bridge/client` inside the preview browser or iframe to observe HMR build state and browser runtime errors from one event stream.
-
-## connect
-
-```ts
-const connection = connect(next, options, listener)
-```
-
-`connect()` opens the Next dev websocket, processes incoming HMR messages, and emits normalized events.
-
-```ts
 import { connect } from 'next-dev-bridge'
-
-const connection = connect(
-  {
-    url: 'http://localhost:3000',
-  },
-  {
-    reconnect: false,
-  },
-  (event, state) => {
-    console.log(event.type, state.phase)
-  }
-)
 ```
 
-`next` can be a URL string or an object:
-
-```ts
-connect('http://localhost:3000', listener)
-
-connect({
-  url: 'http://localhost:3000',
-})
-```
-
-`options` controls the connection, not the Next instance:
-
-```ts
-connect(next, {
-  reconnect: true,
-  maxReconnects: Infinity,
-  verbose: false,
-  raw: false,
-})
-```
-
-The returned connection supports:
-
-```ts
-connection.getSnapshot()
-connection.stop()
-connection.on('event', listener)
-```
-
-Call `connection.stop()` when the owning process is shutting down or no longer
-needs the observer:
-
-```ts
-process.once('SIGINT', () => {
-  connection.stop()
-  process.exit(130)
-})
-```
+Use `observeNextDev()` from `next-dev-bridge/client` inside the preview browser
+or iframe to observe HMR build state and browser runtime errors from one event
+stream. Use the CLI for a quick terminal view. Use `connect()` from
+`next-dev-bridge` in Node when another process needs to attach to a running Next
+dev server.
 
 ## observeNextDev
 
@@ -250,6 +192,93 @@ The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and
 
 next-dev-bridge sends captured runtime stack frames to Next.js as-is and uses the decoded
 frames when Next can resolve them.
+
+## CLI
+
+Start your Next.js app first:
+
+```sh
+next dev
+```
+
+Then observe it with `next-dev-bridge`:
+
+```sh
+next-dev-bridge http://localhost:3000
+```
+
+Useful options:
+
+```sh
+next-dev-bridge 3000
+next-dev-bridge observe http://localhost:3000 --verbose
+next-dev-bridge http://localhost:3000 --no-reconnect
+```
+
+The CLI attaches to the running dev server. It does not start Next.js for you.
+
+## connect
+
+```ts
+const connection = connect(next, options, listener)
+```
+
+`connect()` opens the Next dev websocket, processes incoming HMR messages, and emits normalized events.
+
+```ts
+import { connect } from 'next-dev-bridge'
+
+const connection = connect(
+  {
+    url: 'http://localhost:3000',
+  },
+  {
+    reconnect: false,
+  },
+  (event, state) => {
+    console.log(event.type, state.phase)
+  }
+)
+```
+
+`next` can be a URL string or an object:
+
+```ts
+connect('http://localhost:3000', listener)
+
+connect({
+  url: 'http://localhost:3000',
+})
+```
+
+`options` controls the connection, not the Next instance:
+
+```ts
+connect(next, {
+  reconnect: true,
+  maxReconnects: Infinity,
+  verbose: false,
+  raw: false,
+})
+```
+
+The returned connection supports:
+
+```ts
+connection.getSnapshot()
+connection.stop()
+connection.on('event', listener)
+```
+
+Call `connection.stop()` when the owning process is shutting down or no longer
+needs the observer:
+
+```ts
+process.once('SIGINT', () => {
+  connection.stop()
+  process.exit(130)
+})
+```
 
 ## Events
 

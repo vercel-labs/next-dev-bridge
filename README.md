@@ -47,54 +47,6 @@ next-dev-bridge observe http://localhost:3000 --verbose
 next-dev-bridge http://localhost:3000 --no-reconnect
 ```
 
-## Node API
-
-Use `connect()` when you want to observe a running Next.js dev server from Node.
-
-```ts
-import { connect } from 'next-dev-bridge'
-
-const connection = connect(
-  { url: 'http://localhost:3000' },
-  { reconnect: true },
-  (event, state) => {
-    if (event.type === 'build:error') {
-      console.log(`build errors: ${event.errors.length}`)
-      console.log(event.errors[0])
-    }
-
-    if (event.type === 'build:recovered') {
-      console.log('build recovered')
-    }
-  }
-)
-```
-
-`connect()` emits session events because it owns the websocket connection, plus
-normalized build events from the Next.js HMR stream.
-
-Stop the connection when your own process is shutting down:
-
-```ts
-process.once('SIGINT', () => {
-  connection.stop()
-  process.exit(130)
-})
-```
-
-Common build events:
-
-```ts
-'build:ready'
-'build:error'
-'build:recovered'
-'observer:error'
-'session:connecting'
-'session:connected'
-'session:disconnected'
-'session:error'
-```
-
 ## Browser API
 
 Use `observeNextDev()` inside the preview page or iframe when you want both HMR
@@ -159,6 +111,54 @@ ws.addEventListener('message', (messageEvent) => {
 ```
 
 Most browser integrations should use `observeNextDev()` instead.
+
+## Node API
+
+Use `connect()` when you want to observe a running Next.js dev server from Node.
+
+```ts
+import { connect } from 'next-dev-bridge'
+
+const connection = connect(
+  { url: 'http://localhost:3000' },
+  { reconnect: true },
+  (event, state) => {
+    if (event.type === 'build:error') {
+      console.log(`build errors: ${event.errors.length}`)
+      console.log(event.errors[0])
+    }
+
+    if (event.type === 'build:recovered') {
+      console.log('build recovered')
+    }
+  }
+)
+```
+
+`connect()` emits session events because it owns the websocket connection, plus
+normalized build events from the Next.js HMR stream.
+
+Stop the connection when your own process is shutting down:
+
+```ts
+process.once('SIGINT', () => {
+  connection.stop()
+  process.exit(130)
+})
+```
+
+Common build events:
+
+```ts
+'build:ready'
+'build:error'
+'build:recovered'
+'observer:error'
+'session:connecting'
+'session:connected'
+'session:disconnected'
+'session:error'
+```
 
 ## Examples
 
