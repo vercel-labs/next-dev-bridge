@@ -16,8 +16,8 @@ const ERROR_OVERLAY_POSITIONS = [
   { value: 'preview-center', label: 'Preview center' },
   { value: 'preview-corner', label: 'Preview corner' },
 ]
-const DEFAULT_CONTROL_ORIGIN = 'http://127.0.0.1:3010'
-const DEFAULT_PREVIEW_ORIGIN = 'http://127.0.0.1:3001'
+const DEFAULT_CONTROL_ORIGIN = ''
+const SANDBOX_STORAGE_KEY = 'next-dev-bridge-sandbox'
 
 export function NextDevBridgeWeb() {
   const previewFrameRef = useRef(null)
@@ -26,14 +26,18 @@ export function NextDevBridgeWeb() {
   const suppressBuildErrorsRef = useRef(false)
   const pendingResetPreviewRef = useRef(false)
   const [controlOrigin, setControlOrigin] = useState(DEFAULT_CONTROL_ORIGIN)
-  const [previewOrigin, setPreviewOrigin] = useState(DEFAULT_PREVIEW_ORIGIN)
+  const [controlReady, setControlReady] = useState(false)
+  const [previewOrigin, setPreviewOrigin] = useState('')
+  const [previewMode, setPreviewMode] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(true)
+  const [sandboxId, setSandboxId] = useState('')
   const [scenarios, setScenarios] = useState([])
   const [selectedScenario, setSelectedScenario] = useState('')
   const [editPath, setEditPath] = useState('')
   const [editContent, setEditContent] = useState('')
   const [previewPath, setPreviewPath] = useState('/build-errors')
   const [previewVersion, setPreviewVersion] = useState(0)
-  const [applyStatus, setApplyStatus] = useState('Ready')
+  const [applyStatus, setApplyStatus] = useState('Starting preview')
   const [hmrEvent, setHmrEvent] = useState(null)
   const [hmrEvents, setHmrEvents] = useState([])
   const [hmrExpanded, setHmrExpanded] = useState(false)
@@ -44,7 +48,9 @@ export function NextDevBridgeWeb() {
 
   const selected = scenarios.find((scenario) => scenario.name === selectedScenario)
   const previewSrc = previewOrigin
-    ? `${previewOrigin}${previewPath}?nextDevBridgePreview=${previewVersion}`
+    ? `${trimTrailingSlash(
+        previewOrigin
+      )}${previewPath}?nextDevBridgePreview=${previewVersion}`
     : ''
   const errorEntries = [
     ...buildErrors.map((error, index) => ({
@@ -78,24 +84,71 @@ export function NextDevBridgeWeb() {
     : [hmrEvent || '[WAITING]']
 
   useEffect(() => {
+    let cancelled = false
     const params = new URLSearchParams(window.location.search)
     const control = params.get('control') || DEFAULT_CONTROL_ORIGIN
-    const preview = params.get('preview') || DEFAULT_PREVIEW_ORIGIN
+    const preview = params.get('preview')
+    const sandbox =
+      params.get('sandbox') || window.localStorage.getItem(SANDBOX_STORAGE_KEY) || ''
 
     setControlOrigin(control)
-    setPreviewOrigin(preview)
+
+    async function initializePreview() {
+      try {
+        if (sandbox) {
+          setSandboxId(sandbox)
+        }
+
+        if (preview) {
+          setPreviewOrigin(preview)
+          setPreviewLoading(false)
+          setApplyStatus('Ready')
+          setControlReady(true)
+          return
+        }
+
+        const payload = await fetchPreviewSession(control, sandbox)
+        if (cancelled) {
+          return
+        }
+
+        applyPreviewPayload(payload)
+        setPreviewLoading(false)
+        setApplyStatus(
+          payload.mode === 'sandbox' ? 'Sandbox preview ready' : 'Ready'
+        )
+        setControlReady(true)
+      } catch (error) {
+        if (!cancelled) {
+          setPreviewLoading(false)
+          setApplyStatus(error.message || String(error))
+          setControlReady(true)
+        }
+      }
+    }
+
+    initializePreview()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
-    if (!controlOrigin) {
+    if (!controlReady || !previewOrigin) {
       return
     }
 
     let cancelled = false
 
     async function loadScenarios() {
-      const response = await fetch(`${controlOrigin}/api/test-edits`)
+      const response = await fetch(
+        buildApiUrl(controlOrigin, '/api/test-edits', sessionParams())
+      )
       const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to load scenarios.')
+      }
       const nextScenarios = payload.scenarios || []
       const initial =
         nextScenarios.find((scenario) => scenario.name === 'build:syntax') ||
@@ -106,6 +159,9 @@ export function NextDevBridgeWeb() {
       }
 
       setScenarios(nextScenarios)
+      if (payload.preview) {
+        applyPreviewPayload(payload.preview)
+      }
       if (initial) {
         selectScenario(initial)
       }
@@ -120,7 +176,7 @@ export function NextDevBridgeWeb() {
     return () => {
       cancelled = true
     }
-  }, [controlOrigin])
+  }, [controlOrigin, controlReady, previewOrigin, sandboxId])
 
   useEffect(() => {
     const previousErrorCount = previousErrorCountRef.current
@@ -140,11 +196,17 @@ export function NextDevBridgeWeb() {
   }, [errorEntries.length])
 
   useEffect(() => {
-    if (!controlOrigin) {
+    if (!controlReady || !previewOrigin) {
       return
     }
 
-    const source = new EventSource(`${controlOrigin}/api/next-dev-bridge-events`)
+    const source = new EventSource(
+      buildApiUrl(
+        controlOrigin,
+        '/api/next-dev-bridge-events',
+        sessionParams({ target: previewOrigin })
+      )
+    )
 
     source.addEventListener('next-dev-bridge', (message) => {
       const payload = JSON.parse(message.data)
@@ -171,11 +233,12 @@ export function NextDevBridgeWeb() {
     return () => {
       source.close()
     }
-  }, [controlOrigin])
+  }, [controlOrigin, controlReady, previewOrigin, sandboxId])
 
   useEffect(() => {
     function onMessage(message) {
-      if (previewOrigin && message.origin !== previewOrigin) {
+      const expectedOrigin = getMessageTargetOrigin(previewOrigin)
+      if (expectedOrigin && message.origin !== expectedOrigin) {
         return
       }
 
@@ -242,6 +305,60 @@ export function NextDevBridgeWeb() {
     }
   }, [previewOrigin])
 
+  function applyPreviewPayload(preview) {
+    if (!preview) {
+      return
+    }
+
+    if (preview.previewOrigin) {
+      setPreviewOrigin(preview.previewOrigin)
+    }
+
+    if (preview.mode) {
+      setPreviewMode(preview.mode)
+    }
+
+    if (preview.sandboxId) {
+      setSandboxId(preview.sandboxId)
+      window.localStorage.setItem(SANDBOX_STORAGE_KEY, preview.sandboxId)
+    }
+  }
+
+  function sessionParams(extra = {}) {
+    return sandboxId
+      ? {
+          ...extra,
+          sandbox: sandboxId,
+        }
+      : extra
+  }
+
+  async function fetchPreviewSession(control, sandbox, options = {}) {
+    const params = sandbox
+      ? {
+          sandbox,
+        }
+      : {}
+
+    if (options.restart) {
+      params.restart = '1'
+    }
+
+    const response = await fetch(
+      buildApiUrl(control, '/api/preview-sandbox', params),
+      {
+        method: 'POST',
+      }
+    )
+    const payload = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'Failed to start preview.')
+    }
+
+    return payload
+  }
+
   function selectScenario(scenario) {
     const firstEdit = scenario.edits?.[0]
     setSelectedScenario(scenario.name)
@@ -259,13 +376,16 @@ export function NextDevBridgeWeb() {
     setApplyStatus(`Writing ${editPath}`)
 
     if (selectedScenario && selected?.edits?.length > 1) {
-      const scenarioResponse = await fetch(`${controlOrigin}/api/test-edits`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ scenario: selectedScenario }),
-      })
+      const scenarioResponse = await fetch(
+        buildApiUrl(controlOrigin, '/api/test-edits', sessionParams()),
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ scenario: selectedScenario }),
+        }
+      )
 
       if (!scenarioResponse.ok) {
         const payload = await scenarioResponse.json().catch(() => ({}))
@@ -275,22 +395,29 @@ export function NextDevBridgeWeb() {
       }
     }
 
-    const response = await fetch(`${controlOrigin}/api/test-edits`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        path: editPath,
-        content: editContent,
-      }),
-    })
+    const response = await fetch(
+      buildApiUrl(controlOrigin, '/api/test-edits', sessionParams()),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: editPath,
+          content: editContent,
+        }),
+      }
+    )
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}))
       throw new Error(payload.error || 'Failed to apply edit.')
     }
 
+    const payload = await response.json().catch(() => ({}))
+    if (payload.preview) {
+      applyPreviewPayload(payload.preview)
+    }
     setApplyStatus(`Applied ${selectedScenario || editPath}`)
   }
 
@@ -300,19 +427,26 @@ export function NextDevBridgeWeb() {
     pendingResetPreviewRef.current = name === 'reset'
     setApplyStatus(`Applying ${name}`)
 
-    const response = await fetch(`${controlOrigin}/api/test-edits`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ scenario: name }),
-    })
+    const response = await fetch(
+      buildApiUrl(controlOrigin, '/api/test-edits', sessionParams()),
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ scenario: name }),
+      }
+    )
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}))
       throw new Error(payload.error || `Failed to apply ${name}.`)
     }
 
+    const payload = await response.json().catch(() => ({}))
+    if (payload.preview) {
+      applyPreviewPayload(payload.preview)
+    }
     if (scenario?.route && name !== 'reset') {
       setPreviewPath(scenario.route)
     }
@@ -343,7 +477,7 @@ export function NextDevBridgeWeb() {
       {
         type: 'next-dev-bridge:runtime-reset',
       },
-      previewOrigin || '*'
+      getMessageTargetOrigin(previewOrigin) || '*'
     )
   }
 
@@ -440,6 +574,11 @@ export function NextDevBridgeWeb() {
             Pick one source change, edit the file body if needed, then apply it
             to the separate preview app.
           </p>
+          <p className="previewSessionStatus">
+            {previewOrigin
+              ? `${previewMode || 'local'} preview - ${previewOrigin}`
+              : applyStatus}
+          </p>
         </div>
 
         <label className="scenarioSelectLabel" htmlFor="scenario-select">
@@ -447,6 +586,7 @@ export function NextDevBridgeWeb() {
           <select
             className="scenarioSelect"
             id="scenario-select"
+            disabled={previewLoading || scenarios.length === 0}
             onChange={(event) => {
               const scenario = scenarios.find(
                 (entry) => entry.name === event.target.value
@@ -481,6 +621,7 @@ export function NextDevBridgeWeb() {
                     ? 'routeButton routeButtonActive'
                     : 'routeButton'
                 }
+                disabled={previewLoading || scenarios.length === 0}
                 key={route.path}
                 onClick={() => {
                   const scenario = scenarios.find(
@@ -511,6 +652,7 @@ export function NextDevBridgeWeb() {
         </label>
         <textarea
           className="editTextarea"
+          disabled={previewLoading || !editPath}
           id="edit-content"
           onChange={(event) => setEditContent(event.target.value)}
           spellCheck={false}
@@ -519,10 +661,20 @@ export function NextDevBridgeWeb() {
 
         <div className="editActions">
           <div className="actionButtons">
-            <button className="primaryAction" onClick={handleApplyCurrentEdit} type="button">
+            <button
+              className="primaryAction"
+              disabled={previewLoading || !editPath}
+              onClick={handleApplyCurrentEdit}
+              type="button"
+            >
               Apply edit
             </button>
-            <button className="secondaryAction" onClick={handleReset} type="button">
+            <button
+              className="secondaryAction"
+              disabled={previewLoading || scenarios.length === 0}
+              onClick={handleReset}
+              type="button"
+            >
               Reset
             </button>
           </div>
@@ -532,12 +684,16 @@ export function NextDevBridgeWeb() {
 
       <section className="previewWorkbench">
         <div className="previewFrameWrap">
-          <iframe
-            className="previewFrame"
-            ref={previewFrameRef}
-            src={previewSrc}
-            title="Separate Next preview app"
-          />
+          {previewSrc ? (
+            <iframe
+              className="previewFrame"
+              ref={previewFrameRef}
+              src={previewSrc}
+              title="Separate Next preview app"
+            />
+          ) : (
+            <div className="previewStarting">{applyStatus}</div>
+          )}
           {showErrorsOverPreview ? (
             <div
               className={
@@ -613,6 +769,41 @@ export function NextDevBridgeWeb() {
       </section>
     </main>
   )
+}
+
+function buildApiUrl(controlOrigin, pathname, params = {}) {
+  const url = new URL(
+    pathname,
+    controlOrigin ? ensureTrailingSlash(controlOrigin) : window.location.origin
+  )
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      url.searchParams.set(key, value)
+    }
+  }
+
+  return controlOrigin ? url.href : `${url.pathname}${url.search}`
+}
+
+function ensureTrailingSlash(value) {
+  return value.endsWith('/') ? value : `${value}/`
+}
+
+function trimTrailingSlash(value) {
+  return value.endsWith('/') ? value.slice(0, -1) : value
+}
+
+function getMessageTargetOrigin(value) {
+  if (!value) {
+    return ''
+  }
+
+  try {
+    return new URL(value).origin
+  } catch {
+    return ''
+  }
 }
 
 function formatHmrEvent(event) {

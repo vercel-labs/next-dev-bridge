@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@vercel/sandbox": "^1.10.0",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",

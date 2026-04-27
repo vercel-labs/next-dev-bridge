@@ -1,0 +1,17 @@
+{
+  "name": "next-dev-bridge-web-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@vercel/sandbox": "latest",
+    "next": "latest",
+    "next-dev-bridge": "0.0.1",
+    "react": "latest",
+    "react-dom": "latest"
+  }
+}

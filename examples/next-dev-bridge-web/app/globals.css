@@ -229,6 +229,18 @@ h3 {
   line-height: 1.45;
 }
 
+.previewSessionStatus {
+  overflow: hidden;
+  margin-top: 8px;
+  background: var(--panel-soft);
+  padding: 0.42rem 0.5rem;
+  color: var(--brutal-ink) !important;
+  font-size: 0.66rem !important;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .controlOrigin {
   margin-top: 10px;
   font-size: 0.88rem;
@@ -257,6 +269,15 @@ h3 {
 
 .scenarioSelect:focus {
   box-shadow: 0 0 0 2px rgba(201, 133, 28, 0.34);
+}
+
+.scenarioSelect:disabled,
+.editTextarea:disabled,
+.primaryAction:disabled,
+.secondaryAction:disabled,
+.routeButton:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 .scenarioDescription {
@@ -461,6 +482,22 @@ h3 {
   height: 100%;
   border: 0;
   background: #fffaf0;
+}
+
+.previewStarting {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  place-items: center;
+  background: #ffffff;
+  color: var(--brutal-muted);
+  padding: 24px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .errorInspector {
