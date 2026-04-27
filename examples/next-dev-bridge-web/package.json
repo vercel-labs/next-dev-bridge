@@ -1,7 +1,7 @@
 {
   "name": "next-dev-bridge-web-example",
   "private": true,
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
