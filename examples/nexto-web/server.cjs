@@ -8,14 +8,14 @@ const {
   applyScenario,
   getScenarioPayloads,
   writeScenarioFile,
-} = require('../nextd-preview/scenarios.cjs')
+} = require('../nexto-preview/scenarios.cjs')
 
 const ROOT = path.resolve(__dirname, '..', '..')
-const PORT = Number(process.env.NEXTD_CONTROL_PORT || 3010)
-const HOST = process.env.NEXTD_CONTROL_HOST || '127.0.0.1'
-const TARGET_URL = process.env.NEXTD_TARGET_URL || 'http://127.0.0.1:3001'
+const PORT = Number(process.env.NEXTO_CONTROL_PORT || 3010)
+const HOST = process.env.NEXTO_CONTROL_HOST || '127.0.0.1'
+const TARGET_URL = process.env.NEXTO_TARGET_URL || 'http://127.0.0.1:3001'
 
-let nextdPromise = null
+let nextoPromise = null
 
 const server = http.createServer(async (req, res) => {
   setCorsHeaders(res)
@@ -64,8 +64,8 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    if (req.method === 'GET' && url.pathname === '/api/nextd-events') {
-      await streamNextdEvents(req, res, url)
+    if (req.method === 'GET' && url.pathname === '/api/nexto-events') {
+      await streamNextoEvents(req, res, url)
       return
     }
 
@@ -82,7 +82,7 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`nextd web control server listening on http://${HOST}:${PORT}`)
+  console.log(`nexto web control server listening on http://${HOST}:${PORT}`)
   console.log(`editing and observing preview app at ${TARGET_URL}`)
 })
 
@@ -124,8 +124,8 @@ function readJson(req) {
   })
 }
 
-async function streamNextdEvents(req, res, url) {
-  const { connect } = await loadNextd()
+async function streamNextoEvents(req, res, url) {
+  const { connect } = await loadNexto()
   const target = url.searchParams.get('target') || TARGET_URL
   let observer = null
   let heartbeat = null
@@ -154,7 +154,7 @@ async function streamNextdEvents(req, res, url) {
       reconnect: false,
     },
     (event, state) => {
-      send('nextd', { event, state })
+      send('nexto', { event, state })
     }
   )
 
@@ -175,12 +175,12 @@ async function streamNextdEvents(req, res, url) {
   })
 }
 
-function loadNextd() {
-  if (!nextdPromise) {
-    nextdPromise = import(pathToFileURL(path.join(ROOT, 'dist/index.js')).href)
+function loadNexto() {
+  if (!nextoPromise) {
+    nextoPromise = import(pathToFileURL(path.join(ROOT, 'dist/index.js')).href)
   }
 
-  return nextdPromise
+  return nextoPromise
 }
 
 function shutdown(code) {

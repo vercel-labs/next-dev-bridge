@@ -6,11 +6,11 @@ const { spawn } = require('node:child_process')
 
 const WEB_ROOT = __dirname
 const REPO_ROOT = path.resolve(WEB_ROOT, '..', '..')
-const PREVIEW_ROOT = path.join(REPO_ROOT, 'examples', 'nextd-preview')
+const PREVIEW_ROOT = path.join(REPO_ROOT, 'examples', 'nexto-preview')
 const NEXT_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'next')
-const CONTROL_PORT = process.env.NEXTD_CONTROL_PORT || '3010'
+const CONTROL_PORT = process.env.NEXTO_CONTROL_PORT || '3010'
 const WEB_PORT = process.env.PORT || '3000'
-const PREVIEW_PORT = process.env.NEXTD_PREVIEW_PORT || '3001'
+const PREVIEW_PORT = process.env.NEXTO_PREVIEW_PORT || '3001'
 const TARGET_URL = `http://127.0.0.1:${PREVIEW_PORT}`
 const runner = process.argv[0]
 const processes = createProcessGroup()
@@ -19,8 +19,8 @@ processes.start('control', runner, [path.join(WEB_ROOT, 'server.cjs')], {
   cwd: REPO_ROOT,
   env: {
     ...process.env,
-    NEXTD_CONTROL_PORT: CONTROL_PORT,
-    NEXTD_TARGET_URL: TARGET_URL,
+    NEXTO_CONTROL_PORT: CONTROL_PORT,
+    NEXTO_TARGET_URL: TARGET_URL,
   },
   stdio: 'inherit',
 })
@@ -30,8 +30,8 @@ processes.start('web', NEXT_BIN, ['dev', '-p', WEB_PORT], {
   env: {
     ...process.env,
     NEXT_TELEMETRY_DISABLED: '1',
-    NEXTD_CONTROL_PORT: CONTROL_PORT,
-    NEXTD_PREVIEW_ORIGIN: TARGET_URL,
+    NEXTO_CONTROL_PORT: CONTROL_PORT,
+    NEXTO_PREVIEW_ORIGIN: TARGET_URL,
   },
   stdio: 'inherit',
 })
@@ -64,7 +64,7 @@ function createProcessGroup() {
       detached,
     })
 
-    child.nextdName = name
+    child.nextoName = name
     children.push(child)
 
     child.on('exit', (code, signal) => {

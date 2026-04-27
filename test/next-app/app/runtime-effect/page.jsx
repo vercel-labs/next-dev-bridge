@@ -27,7 +27,7 @@ export default function RuntimeEffectPage() {
           <ol className="stepList">
             <li>
               Run <code>bun run scenario -- runtime-effect:error</code> to add
-              the effect that logs <code>console.error</code> and throws.
+              the effect that throws after hydration.
             </li>
             <li>
               Run <code>bun run scenario -- runtime-effect:recover</code> to

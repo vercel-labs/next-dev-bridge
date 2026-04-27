@@ -10,8 +10,8 @@ export default function BuildErrorsPage() {
           <h1>Break compilation, then recover through HMR.</h1>
           <p className="lede">
             This route imports <code>app/build-errors/subject.js</code>. The
-            example editor rewrites that file to create build failures nextd
-            can see directly.
+            example editor rewrites that file to create build failures that
+            nexto can see directly.
           </p>
         </section>
         <Link className="backLink" href="/">

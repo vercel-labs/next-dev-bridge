@@ -10,7 +10,7 @@ const HMR_TYPES = {
 
 export type { SerializedError }
 
-export interface NextdState {
+export interface NextoState {
   connection: 'idle' | 'connecting' | 'connected' | 'disconnected'
   phase: 'idle' | 'compiling' | 'ok' | 'error'
   building: boolean
@@ -32,12 +32,6 @@ export type ProcessHMREvent =
       reason: string
       raw?: string
       error: SerializedError
-    }
-  | {
-      type: 'build:compiling'
-      status: 'compiling'
-      buildId: number
-      at: string
     }
   | BuildReadyEvent
   | BuildRecoveredEvent
@@ -92,18 +86,18 @@ export interface ProcessHMROptions {
 
 export type ProcessHMRListener = (
   event: ProcessHMREvent,
-  state: NextdState
+  state: NextoState
 ) => void
 
 export interface ProcessHMRResult {
   events: ProcessHMREvent[]
-  state: NextdState
+  state: NextoState
 }
 
 export interface ProcessHMR {
   (raw: unknown, listener?: ProcessHMRListener): ProcessHMRResult
-  getSnapshot(): NextdState
-  reset(): NextdState
+  getSnapshot(): NextoState
+  reset(): NextoState
 }
 
 export function processHMR(options: ProcessHMROptions = {}): ProcessHMR {
@@ -161,7 +155,7 @@ export function processHMR(options: ProcessHMROptions = {}): ProcessHMR {
 }
 
 function reduceHmrMessage(
-  state: NextdState,
+  state: NextoState,
   message: Record<string, unknown>,
   options: ProcessHMROptions,
   emit: (event: ProcessHMREvent) => void
@@ -176,12 +170,6 @@ function reduceHmrMessage(
       state.building = true
       state.buildCycle += 1
       state.lastChangedAt = changedAt
-      emit({
-        type: 'build:compiling',
-        status: 'compiling',
-        buildId: state.buildCycle,
-        at: changedAt,
-      })
       return
     }
 
@@ -295,7 +283,7 @@ function timestamp(options: ProcessHMROptions) {
   return value
 }
 
-function createInitialState(): NextdState {
+function createInitialState(): NextoState {
   return {
     connection: 'idle',
     phase: 'idle',
@@ -557,7 +545,7 @@ function stripAnsi(value: string) {
   return String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
 }
 
-function cloneState(state: NextdState): NextdState {
+function cloneState(state: NextoState): NextoState {
   return {
     ...state,
     errors: [...state.errors],

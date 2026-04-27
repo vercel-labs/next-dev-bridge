@@ -2,14 +2,13 @@ import { EventEmitter } from 'node:events'
 
 import { serializeError, type SerializedError } from './errors.js'
 import {
-  type NextdState,
+  type NextoState,
   type ProcessHMREvent,
   processHMR,
   type ProcessHMR,
 } from './processor.js'
 import {
   DEFAULT_DEV_SERVER_URL,
-  DEFAULT_HMR_PATH,
   buildHmrUrl,
   connectWebSocket,
 } from './websocket.js'
@@ -19,9 +18,6 @@ const RECONNECT_MAX_DELAY_MS = 5000
 
 export interface NextInstanceOptions {
   url?: string
-  path?: string
-  id?: string
-  headers?: Record<string, string>
 }
 
 export type NextInstance = string | NextInstanceOptions
@@ -35,7 +31,7 @@ export interface ConnectOptions {
 
 interface ObserverOptions extends NextInstanceOptions, ConnectOptions {}
 
-export type NextdEvent =
+export type NextoEvent =
   | { type: 'session:connecting'; url: string }
   | { type: 'session:connected'; url: string }
   | { type: 'session:disconnected'; code?: number; reason?: string }
@@ -51,32 +47,32 @@ export interface InternalBinaryMessageEvent {
   opcode: number
 }
 
-export type NextdEventListener = (
-  event: NextdEvent,
-  state: NextdState
+export type NextoEventListener = (
+  event: NextoEvent,
+  state: NextoState
 ) => void
 
-export interface NextdConnection {
+export interface NextoConnection {
   stop(): void
-  getSnapshot(): NextdState
-  on(eventName: 'event', listener: NextdEventListener): this
+  getSnapshot(): NextoState
+  on(eventName: 'event', listener: NextoEventListener): this
   on(eventName: string | symbol, listener: (...args: any[]) => void): this
 }
 
 export function connect(
   next?: NextInstance,
-  listener?: NextdEventListener
-): NextdConnection
+  listener?: NextoEventListener
+): NextoConnection
 export function connect(
   next: NextInstance,
   options?: ConnectOptions,
-  listener?: NextdEventListener
-): NextdConnection
+  listener?: NextoEventListener
+): NextoConnection
 export function connect(
   next: NextInstance = {},
-  optionsOrListener?: ConnectOptions | NextdEventListener,
-  maybeListener?: NextdEventListener
-): NextdConnection {
+  optionsOrListener?: ConnectOptions | NextoEventListener,
+  maybeListener?: NextoEventListener
+): NextoConnection {
   const nextOptions = normalizeNextInstance(next)
   const connectOptions =
     typeof optionsOrListener === 'function' ? {} : optionsOrListener || {}
@@ -96,10 +92,10 @@ export function connect(
   return observer
 }
 
-class NextHmrObserverImpl extends EventEmitter implements NextdConnection {
-  private options: Required<Omit<ObserverOptions, 'id'>> & { id?: string }
+class NextHmrObserverImpl extends EventEmitter implements NextoConnection {
+  private options: Required<ObserverOptions>
   private processHMR: ProcessHMR
-  private connection: NextdState['connection']
+  private connection: NextoState['connection']
   private reconnectAttempt: number
   private closed: boolean
   private socket: any
@@ -109,12 +105,9 @@ class NextHmrObserverImpl extends EventEmitter implements NextdConnection {
     super()
     this.options = {
       url: options.url || DEFAULT_DEV_SERVER_URL,
-      path: options.path || DEFAULT_HMR_PATH,
-      id: options.id,
       reconnect: options.reconnect !== false,
       maxReconnects:
         options.maxReconnects === undefined ? Infinity : options.maxReconnects,
-      headers: options.headers || {},
       verbose: Boolean(options.verbose),
       raw: Boolean(options.raw),
     }
@@ -157,9 +150,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextdConnection {
     this.connection = 'connecting'
     this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
 
-    const socket = connectWebSocket(wsUrl, {
-      headers: this.options.headers,
-    })
+    const socket = connectWebSocket(wsUrl)
     this.socket = socket
 
     socket.on('open', () => {
@@ -227,7 +218,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextdConnection {
     }, delayMs)
   }
 
-  private emitEvent(event: NextdEvent) {
+  private emitEvent(event: NextoEvent) {
     const snapshot = this.getSnapshot()
     this.emit('event', event, snapshot)
     this.emit(event.type, event, snapshot)

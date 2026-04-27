@@ -3,9 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 
 const PREVIEW_ROUTES = [
-  { path: '/build-errors', label: 'Build errors' },
-  { path: '/runtime-effect', label: 'Runtime effect' },
-  { path: '/runtime-errors', label: 'Runtime errors' },
+  { path: '/build-errors', label: 'Build errors', scenario: 'build:syntax' },
+  {
+    path: '/runtime-effect',
+    label: 'Runtime effect',
+    scenario: 'runtime-effect:error',
+  },
+  { path: '/runtime-errors', label: 'Runtime errors', scenario: 'runtime:multi' },
 ]
 const ERROR_OVERLAY_POSITIONS = [
   { value: 'panel', label: 'Status panel' },
@@ -14,38 +18,11 @@ const ERROR_OVERLAY_POSITIONS = [
 ]
 const DEFAULT_CONTROL_ORIGIN = 'http://127.0.0.1:3010'
 const DEFAULT_PREVIEW_ORIGIN = 'http://127.0.0.1:3001'
-const DEV_UI_SELECTORS = [
-  'nextjs-portal',
-  'nextjs-toast',
-  'nextjs-static-indicator-toast-wrapper',
-  'nextjs-dev-tools-indicator',
-  'script[data-nextjs-dev-overlay]',
-  '#data-devtools-indicator',
-  '#panel-route',
-  '.dev-tools-indicator-menu',
-  '.dev-tools-indicator-inner',
-  '.dev-tools-indicator-item',
-  '[data-nextjs-toast]',
-  '[data-nextjs-dialog]',
-  '[data-nextjs-dialog-overlay]',
-  '[data-nextjs-error-overlay]',
-  '[data-nextjs-dev-tools-button]',
-  '[data-nextjs-dev-overlay]',
-  '[data-nextjs-build-indicator]',
-  '[data-nextjs-route-type]',
-  '[data-segment-explorer]',
-  '#__next-build-watcher',
-  '#__next-prerender-indicator',
-]
-const HIDE_DEV_UI_CSS = `${DEV_UI_SELECTORS.join(',')} {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}`
 
-export function NextdWeb() {
+export function NextoWeb() {
   const previewFrameRef = useRef(null)
+  const runtimeWindowIdRef = useRef(null)
+  const previousErrorCountRef = useRef(0)
   const suppressBuildErrorsRef = useRef(false)
   const pendingResetPreviewRef = useRef(false)
   const [controlOrigin, setControlOrigin] = useState(DEFAULT_CONTROL_ORIGIN)
@@ -57,39 +34,48 @@ export function NextdWeb() {
   const [previewPath, setPreviewPath] = useState('/build-errors')
   const [previewVersion, setPreviewVersion] = useState(0)
   const [applyStatus, setApplyStatus] = useState('Ready')
+  const [hmrEvent, setHmrEvent] = useState(null)
   const [hmrEvents, setHmrEvents] = useState([])
+  const [hmrExpanded, setHmrExpanded] = useState(false)
   const [buildErrors, setBuildErrors] = useState([])
-  const [runtimeEvents, setRuntimeEvents] = useState([])
+  const [runtimeErrors, setRuntimeErrors] = useState([])
+  const [activeErrorIndex, setActiveErrorIndex] = useState(0)
   const [errorOverlayPosition, setErrorOverlayPosition] = useState('panel')
 
   const selected = scenarios.find((scenario) => scenario.name === selectedScenario)
   const previewSrc = previewOrigin
-    ? `${previewOrigin}${previewPath}?nextdPreview=${previewVersion}`
+    ? `${previewOrigin}${previewPath}?nextoPreview=${previewVersion}`
     : ''
-  const runtimeErrors = runtimeEvents
-    .filter((event) => event.kind === 'error')
-    .slice(-4)
-  const errorEntries =
-    buildErrors.length > 0
-      ? buildErrors.map((error, index) => ({
-          body: error,
-          className: 'errorBlock',
-          key: `build-${index}-${error.slice(0, 24)}`,
-        }))
-      : runtimeErrors.map((event) => ({
-          body: formatRuntimeEvent(event),
-          className: 'errorBlock runtimeBlock',
-          key: `runtime-${event.id}`,
-        }))
+  const errorEntries = [
+    ...buildErrors.map((error, index) => ({
+      body: error,
+      className: 'errorBlock',
+      key: `build-${index}-${error.slice(0, 24)}`,
+      label: `Build ${index + 1}`,
+    })),
+    ...runtimeErrors.map((error, index) => ({
+      body: formatRuntimeError(error),
+      className: 'errorBlock runtimeBlock',
+      key: `runtime-${error.id}-${error.message}`,
+      label: `Runtime ${index + 1}`,
+    })),
+  ]
   const hasVisibleErrors = errorEntries.length > 0
+  const safeActiveErrorIndex = hasVisibleErrors
+    ? Math.min(activeErrorIndex, errorEntries.length - 1)
+    : 0
+  const activeError = hasVisibleErrors ? errorEntries[safeActiveErrorIndex] : null
   const showErrorsInPanel = errorOverlayPosition === 'panel'
   const showErrorsOverPreview = hasVisibleErrors && !showErrorsInPanel
   const errorBadgeLabel =
-    buildErrors.length > 0
-      ? `${buildErrors.length} build error${buildErrors.length === 1 ? '' : 's'}`
-      : runtimeErrors.length > 0
-        ? `${runtimeErrors.length} runtime error${runtimeErrors.length === 1 ? '' : 's'}`
-        : 'build clean'
+    errorEntries.length > 0
+      ? `${errorEntries.length} error${errorEntries.length === 1 ? '' : 's'}`
+      : 'clean'
+  const hmrLogLines = hmrExpanded
+    ? hmrEvents.length > 0
+      ? hmrEvents
+      : ['[WAITING]']
+    : [hmrEvent || '[WAITING]']
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -99,19 +85,6 @@ export function NextdWeb() {
     setControlOrigin(control)
     setPreviewOrigin(preview)
   }, [])
-
-  useEffect(() => {
-    disableNextDevIndicator(previewOrigin)
-    hidePreviewIframeDevUi(previewFrameRef.current)
-
-    const timer = setInterval(() => {
-      hidePreviewIframeDevUi(previewFrameRef.current)
-    }, 500)
-
-    return () => {
-      clearInterval(timer)
-    }
-  }, [previewOrigin, previewSrc])
 
   useEffect(() => {
     if (!controlOrigin) {
@@ -150,17 +123,38 @@ export function NextdWeb() {
   }, [controlOrigin])
 
   useEffect(() => {
+    const previousErrorCount = previousErrorCountRef.current
+    previousErrorCountRef.current = errorEntries.length
+
+    setActiveErrorIndex((currentIndex) => {
+      if (errorEntries.length === 0) {
+        return 0
+      }
+
+      if (errorEntries.length > previousErrorCount) {
+        return errorEntries.length - 1
+      }
+
+      return Math.min(currentIndex, errorEntries.length - 1)
+    })
+  }, [errorEntries.length])
+
+  useEffect(() => {
     if (!controlOrigin) {
       return
     }
 
-    const source = new EventSource(`${controlOrigin}/api/nextd-events`)
+    const source = new EventSource(`${controlOrigin}/api/nexto-events`)
 
-    source.addEventListener('nextd', (message) => {
+    source.addEventListener('nexto', (message) => {
       const payload = JSON.parse(message.data)
       const event = payload.event
+      const formattedEvent = formatHmrEvent(event)
 
-      setHmrEvents((events) => appendHmrEvent(events, formatHmrEvent(event)))
+      if (formattedEvent) {
+        setHmrEvent(formattedEvent)
+        setHmrEvents((events) => [...events, formattedEvent].slice(-120))
+      }
 
       if (event.type === 'build:error' && !suppressBuildErrorsRef.current) {
         setBuildErrors(event.errors || [])
@@ -169,6 +163,7 @@ export function NextdWeb() {
       if (event.type === 'build:ready' || event.type === 'build:recovered') {
         suppressBuildErrorsRef.current = false
         setBuildErrors([])
+        // Next's overlay treats build success and runtime recovery separately.
         finishPendingResetPreviewReload()
       }
     })
@@ -179,30 +174,73 @@ export function NextdWeb() {
   }, [controlOrigin])
 
   useEffect(() => {
-    if (!previewOrigin || buildErrors.length > 0) {
-      return
-    }
+    function onMessage(message) {
+      if (previewOrigin && message.origin !== previewOrigin) {
+        return
+      }
 
-    let cancelled = false
+      const payload = message.data
+      if (!payload) {
+        return
+      }
 
-    async function pollRuntimeEvents() {
-      try {
-        const response = await fetch(`${previewOrigin}/api/runtime-events`)
-        const payload = await response.json()
-        if (!cancelled) {
-          setRuntimeEvents(payload.events || [])
+      if (payload.type === 'nexto:runtime-ready') {
+        if (
+          payload.existing === false &&
+          payload.windowId &&
+          payload.windowId !== runtimeWindowIdRef.current
+        ) {
+          runtimeWindowIdRef.current = payload.windowId
+          setRuntimeErrors([])
         }
-      } catch {}
+        return
+      }
+
+      if (payload.type !== 'nexto:runtime') {
+        return
+      }
+
+      if (payload.event?.type === 'runtime:error') {
+        const nextError = payload.event.error
+        if (!nextError) {
+          return
+        }
+        if (payload.windowId) {
+          runtimeWindowIdRef.current = payload.windowId
+        }
+
+        setRuntimeErrors((currentErrors) => {
+          const signature = getRuntimeErrorSignature(nextError)
+          if (
+            currentErrors.some(
+              (error) => getRuntimeErrorSignature(error) === signature
+            )
+          ) {
+            return currentErrors
+          }
+
+          return [...currentErrors, nextError]
+        })
+        return
+      }
+
+      if (payload.event?.type === 'runtime:cleared') {
+        if (
+          payload.windowId &&
+          runtimeWindowIdRef.current &&
+          payload.windowId !== runtimeWindowIdRef.current
+        ) {
+          return
+        }
+        setRuntimeErrors([])
+      }
     }
 
-    pollRuntimeEvents()
-    const timer = setInterval(pollRuntimeEvents, 800)
-
+    window.addEventListener('message', onMessage)
     return () => {
-      cancelled = true
-      clearInterval(timer)
+      window.removeEventListener('message', onMessage)
     }
-  }, [buildErrors.length, previewOrigin])
+  }, [previewOrigin])
 
   function selectScenario(scenario) {
     const firstEdit = scenario.edits?.[0]
@@ -219,7 +257,23 @@ export function NextdWeb() {
 
     suppressBuildErrorsRef.current = false
     setApplyStatus(`Writing ${editPath}`)
-    await resetRuntimeEventsIfNeeded()
+
+    if (selectedScenario && selected?.edits?.length > 1) {
+      const scenarioResponse = await fetch(`${controlOrigin}/api/test-edits`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ scenario: selectedScenario }),
+      })
+
+      if (!scenarioResponse.ok) {
+        const payload = await scenarioResponse.json().catch(() => ({}))
+        throw new Error(
+          payload.error || `Failed to prepare ${selectedScenario}.`
+        )
+      }
+    }
 
     const response = await fetch(`${controlOrigin}/api/test-edits`, {
       method: 'POST',
@@ -245,7 +299,6 @@ export function NextdWeb() {
     suppressBuildErrorsRef.current = name === 'reset'
     pendingResetPreviewRef.current = name === 'reset'
     setApplyStatus(`Applying ${name}`)
-    await resetRuntimeEventsIfNeeded(scenario)
 
     const response = await fetch(`${controlOrigin}/api/test-edits`, {
       method: 'POST',
@@ -263,9 +316,6 @@ export function NextdWeb() {
     if (scenario?.route && name !== 'reset') {
       setPreviewPath(scenario.route)
     }
-    if (name !== 'reset') {
-      setPreviewVersion((value) => value + 1)
-    }
     clearVisibleErrors(name === 'reset')
     setApplyStatus(
       name === 'reset' ? 'Reset written' : `Applied ${name}`
@@ -274,27 +324,27 @@ export function NextdWeb() {
 
   function clearVisibleErrors(clearFeed = false) {
     setBuildErrors([])
-    setRuntimeEvents([])
+    setRuntimeErrors([])
+    resetRuntimeObserver()
     if (clearFeed) {
+      setHmrEvent(null)
       setHmrEvents([])
+      setHmrExpanded(false)
     }
   }
 
-  async function resetRuntimeEventsIfNeeded(scenario = selected) {
-    const route = scenario?.route || previewPath
-
-    if (scenario?.name !== 'reset' && !route.startsWith('/runtime')) {
+  function resetRuntimeObserver() {
+    const frameWindow = previewFrameRef.current?.contentWindow
+    if (!frameWindow) {
       return
     }
 
-    if (!previewOrigin) {
-      return
-    }
-
-    await fetch(`${previewOrigin}/api/runtime-events`, {
-      method: 'DELETE',
-    }).catch(() => {})
-    setRuntimeEvents([])
+    frameWindow.postMessage(
+      {
+        type: 'nexto:runtime-reset',
+      },
+      previewOrigin || '*'
+    )
   }
 
   async function handleApplyCurrentEdit() {
@@ -328,6 +378,56 @@ export function NextdWeb() {
     setPreviewPath('/')
     setPreviewVersion((value) => value + 1)
     setApplyStatus('Reset complete')
+  }
+
+  function showPreviousError() {
+    setActiveErrorIndex((currentIndex) =>
+      errorEntries.length <= 1
+        ? 0
+        : (currentIndex - 1 + errorEntries.length) % errorEntries.length
+    )
+  }
+
+  function showNextError() {
+    setActiveErrorIndex((currentIndex) =>
+      errorEntries.length <= 1 ? 0 : (currentIndex + 1) % errorEntries.length
+    )
+  }
+
+  function renderErrorViewer() {
+    if (!activeError) {
+      return null
+    }
+
+    return (
+      <div className="errorViewer">
+        <div className="errorNav">
+          <button
+            className="errorNavButton"
+            disabled={errorEntries.length <= 1}
+            onClick={showPreviousError}
+            type="button"
+          >
+            {'<'}
+          </button>
+          <span className="errorNavLabel">
+            {activeError.label} - {safeActiveErrorIndex + 1} /{' '}
+            {errorEntries.length}
+          </span>
+          <button
+            className="errorNavButton"
+            disabled={errorEntries.length <= 1}
+            onClick={showNextError}
+            type="button"
+          >
+            {'>'}
+          </button>
+        </div>
+        <pre className={activeError.className} key={activeError.key}>
+          {activeError.body}
+        </pre>
+      </div>
+    )
   }
 
   return (
@@ -383,6 +483,18 @@ export function NextdWeb() {
                 }
                 key={route.path}
                 onClick={() => {
+                  const scenario = scenarios.find(
+                    (entry) => entry.name === route.scenario
+                  )
+
+                  if (scenario) {
+                    selectScenario(scenario)
+                  }
+
+                  if (route.path === previewPath) {
+                    return
+                  }
+
                   setPreviewPath(route.path)
                   setPreviewVersion((value) => value + 1)
                 }}
@@ -422,7 +534,6 @@ export function NextdWeb() {
         <div className="previewFrameWrap">
           <iframe
             className="previewFrame"
-            onLoad={() => hidePreviewIframeDevUi(previewFrameRef.current)}
             ref={previewFrameRef}
             src={previewSrc}
             title="Separate Next preview app"
@@ -435,11 +546,7 @@ export function NextdWeb() {
                   : 'previewErrorOverlay previewErrorOverlayCorner'
               }
             >
-              {errorEntries.map((entry) => (
-                <pre className={entry.className} key={entry.key}>
-                  {entry.body}
-                </pre>
-              ))}
+              {renderErrorViewer()}
             </div>
           ) : null}
         </div>
@@ -450,7 +557,7 @@ export function NextdWeb() {
               {errorBadgeLabel}
             </span>
             <div className="overlayPositionControl">
-              <span>Errors</span>
+              <span>Error View Layout</span>
               <div className="overlayPositionButtons">
                 {ERROR_OVERLAY_POSITIONS.map((position) => (
                   <button
@@ -473,11 +580,7 @@ export function NextdWeb() {
 
           <div className="errorScroll">
             {hasVisibleErrors && showErrorsInPanel ? (
-              errorEntries.map((entry) => (
-                <pre className={entry.className} key={entry.key}>
-                  {entry.body}
-                </pre>
-              ))
+              renderErrorViewer()
             ) : hasVisibleErrors ? (
               <div className="emptyErrors">Errors shown over preview.</div>
             ) : (
@@ -486,12 +589,24 @@ export function NextdWeb() {
               </div>
             )}
 
-            <div className="hmrFeed">
-              {hmrEvents.map((event, index) => (
-                <div className="hmrFeedLine" key={`${event}-${index}`}>
-                  {event}
-                </div>
-              ))}
+            <div className={hmrExpanded ? 'hmrFeed hmrFeedExpanded' : 'hmrFeed'}>
+              <div className="hmrFeedHeader">
+                <span>HMR logs ({hmrEvents.length})</span>
+                <button
+                  className="hmrExpandButton"
+                  onClick={() => setHmrExpanded((value) => !value)}
+                  type="button"
+                >
+                  {hmrExpanded ? 'Collapse' : 'Expand'}
+                </button>
+              </div>
+              <div className="hmrFeedBody">
+                {hmrLogLines.map((line, index) => (
+                  <div className="hmrFeedLine" key={`${index}-${line}`}>
+                    {line}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -506,96 +621,109 @@ function formatHmrEvent(event) {
   }
 
   if (event.type === 'build:error') {
-    return `[ERROR] count=${event.errors.length} hash=${event.hash || 'n/a'}`
+    return joinLogParts([
+      '[ERROR]',
+      `count=${event.errors.length}`,
+      event.hash ? `hash=${event.hash}` : null,
+    ])
   }
 
   if (event.type === 'build:ready' || event.type === 'build:recovered') {
-    return `[${event.type === 'build:recovered' ? 'RECOVERED' : 'READY'}] hash=${event.hash || 'n/a'} warnings=${event.warnings.length}`
-  }
-
-  if (event.type === 'build:compiling') {
-    return `[COMPILING] build=${event.buildId}`
+    return joinLogParts([
+      `[${event.type === 'build:recovered' ? 'RECOVERED' : 'READY'}]`,
+      event.hash ? `hash=${event.hash}` : null,
+      `warnings=${event.warnings.length}`,
+    ])
   }
 
   return `[${event.type.toUpperCase()}]`
 }
 
-function appendHmrEvent(events, event) {
-  if (!event || events[0] === event) {
-    return events
+function formatRuntimeError(error) {
+  const lines = [
+    `${error.name || 'Error'}: ${error.message || '(no message)'}`,
+  ]
+  const frames = getSourceMappedRuntimeFrames(error)
+  const codeFrame = stripAnsi(getRuntimeCodeFrame(error))
+
+  if (frames.length > 0) {
+    for (const frame of frames.slice(0, 5)) {
+      lines.push(`    at ${formatRuntimeFrame(frame)}`)
+    }
   }
 
-  return [event, ...events.filter((entry) => entry !== event)].slice(0, 5)
-}
-
-function formatRuntimeEvent(event) {
-  return [
-    `runtime error [${event.category || 'runtime'}] id=${event.id}`,
-    event.message,
-  ].join('\n')
-}
-
-function disableNextDevIndicator(previewOrigin) {
-  if (typeof window === 'undefined') {
-    return
+  if (codeFrame) {
+    lines.push(codeFrame)
   }
 
-  for (const origin of new Set([window.location.origin, previewOrigin])) {
-    if (!origin) {
-      continue
-    }
-
-    fetch(`${origin}/__nextjs_disable_dev_indicator`, {
-      method: 'POST',
-      mode: origin === window.location.origin ? 'same-origin' : 'no-cors',
-    }).catch(() => {})
-  }
+  return lines.join('\n')
 }
 
-function hidePreviewIframeDevUi(iframe) {
-  try {
-    const frameDocument =
-      iframe?.contentDocument || iframe?.contentWindow?.document
+function getSourceMappedRuntimeFrames(error) {
+  return (
+    error.mapped?.mappedFrames
+      ?.map((frame) => {
+        if (frame?.status !== 'fulfilled') {
+          return null
+        }
+        return frame.value?.originalStackFrame || null
+      })
+      .filter(isSourceMappedFrame) || []
+  )
+}
 
-    if (!frameDocument) {
-      return false
-    }
-
-    hideDevUiInRoot(frameDocument, frameDocument)
-
-    for (const element of frameDocument.querySelectorAll('*')) {
-      if (element.shadowRoot) {
-        hideDevUiInRoot(element.shadowRoot, frameDocument)
-      }
-    }
-
-    return true
-  } catch {
+function isSourceMappedFrame(frame) {
+  if (!frame) {
     return false
   }
+
+  const file = frame.file || ''
+
+  return (
+    file &&
+    !file.includes('/_next/static/') &&
+    !file.includes('.next/') &&
+    !/^https?:\/\//.test(file)
+  )
 }
 
-function hideDevUiInRoot(root, ownerDocument) {
-  installHideStyle(root, ownerDocument)
+function getRuntimeCodeFrame(error) {
+  const frame = error.mapped?.mappedFrames?.find(
+    (entry) => entry?.status === 'fulfilled' && entry.value?.originalCodeFrame
+  )
 
-  const selector = DEV_UI_SELECTORS.join(',')
-  for (const node of root.querySelectorAll(selector)) {
-    node.setAttribute('data-nextd-hidden-dev-ui', 'true')
-    node.style.setProperty('display', 'none', 'important')
-    node.style.setProperty('visibility', 'hidden', 'important')
-    node.style.setProperty('opacity', '0', 'important')
-    node.style.setProperty('pointer-events', 'none', 'important')
-  }
+  return frame?.value?.originalCodeFrame || ''
 }
 
-function installHideStyle(root, ownerDocument) {
-  if (root.getElementById?.('nextd-hide-dev-ui')) {
-    return
+function formatRuntimeFrame(frame) {
+  const file = getRuntimeFrameFileName(frame.file)
+  const line = frame.line1 ? `:${frame.line1}` : ''
+  const column = frame.column1 ? `:${frame.column1}` : ''
+
+  return `${file}${line}${column}`
+}
+
+function getRuntimeFrameFileName(file) {
+  if (!file || typeof file !== 'string') {
+    return '<unknown>'
   }
 
-  const style = ownerDocument.createElement('style')
-  style.id = 'nextd-hide-dev-ui'
-  style.textContent = HIDE_DEV_UI_CSS
-  const target = root.head || root.documentElement || root
-  target.appendChild(style)
+  const cleanFile = file.split('?')[0]
+  return cleanFile.split(/[\\/]/).pop() || cleanFile
+}
+
+function stripAnsi(value) {
+  return String(value || '').replace(
+    // eslint-disable-next-line no-control-regex
+    /\x1B\[[0-?]*[ -/]*[@-~]/g,
+    ''
+  )
+}
+
+function getRuntimeErrorSignature(error) {
+  return [error.source, error.name, error.message, error.stack].join('\n')
+}
+
+function joinLogParts(parts) {
+  return parts.filter(Boolean).join(' ')
 }

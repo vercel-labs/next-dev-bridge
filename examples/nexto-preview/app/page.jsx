@@ -23,7 +23,7 @@ export default function PreviewHomePage() {
         <Link className="card cardWarm" href="/runtime-effect">
           <span className="kicker">Preview route</span>
           <h2>Runtime Effect</h2>
-          <p>Starts clean, then a useEffect logs and throws runtime errors.</p>
+          <p>Starts clean, then a useEffect throws a runtime error.</p>
         </Link>
 
         <Link className="card cardWide" href="/runtime-errors">

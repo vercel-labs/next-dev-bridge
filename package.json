@@ -1,5 +1,5 @@
 {
-  "name": "nextd",
+  "name": "nexto",
   "version": "0.1.0",
   "description": "Watch a running Next.js dev server and observe normalized build state events.",
   "type": "module",
@@ -13,15 +13,15 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./processor": {
-      "types": "./dist/processor.d.ts",
-      "import": "./dist/processor.js",
-      "default": "./dist/processor.js"
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
     },
     "./package.json": "./package.json"
   },
   "bin": {
-    "nextd": "./dist/cli.js"
+    "nexto": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -32,11 +32,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
-    "example:web": "bun run build && bun examples/nextd-web/run.cjs",
+    "example:web": "bun run build && bun examples/nexto-web/run.cjs",
     "scenario": "bun test/next-app-scenarios.mjs",
-    "test:app": "bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
+    "test:app": "bun run build && bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
     "prepack": "tsc -p tsconfig.json",
-    "test:unit": "vitest run test/process-hmr.test.ts",
+    "test:unit": "vitest run test",
     "test": "bun test/run-tests.mjs"
   },
   "engines": {

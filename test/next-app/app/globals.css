@@ -1,13 +1,13 @@
 :root {
-  --ink: #17201a;
-  --muted: #596459;
+  --ink: #241a10;
+  --muted: #6a5740;
   --paper: #f7f1e3;
   --paper-strong: #fffaf0;
-  --line: rgba(23, 32, 26, 0.14);
-  --green: #1f6f52;
+  --line: rgba(201, 133, 28, 0.18);
+  --accent: #c9851c;
   --gold: #c9851c;
   --rust: #9e3f2f;
-  --shadow: 0 24px 80px rgba(23, 32, 26, 0.14);
+  --shadow: 0 24px 80px rgba(201, 133, 28, 0.13);
 }
 
 * {
@@ -18,7 +18,7 @@ html {
   min-height: 100%;
   background:
     radial-gradient(circle at 18% 12%, rgba(201, 133, 28, 0.2), transparent 34rem),
-    radial-gradient(circle at 84% 18%, rgba(31, 111, 82, 0.18), transparent 30rem),
+    radial-gradient(circle at 84% 18%, rgba(242, 201, 118, 0.24), transparent 30rem),
     linear-gradient(135deg, #fff8e7 0%, #f3ead4 48%, #e9e1cb 100%);
   color: var(--ink);
 }
@@ -85,7 +85,7 @@ code {
 .eyebrow,
 .kicker {
   margin: 0 0 14px;
-  color: var(--green);
+  color: var(--accent);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -154,7 +154,7 @@ h3 {
 
 .card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 30px 90px rgba(23, 32, 26, 0.18);
+  box-shadow: 0 30px 90px rgba(201, 133, 28, 0.16);
 }
 
 .cardWarm {
@@ -182,7 +182,7 @@ h3 {
   border-radius: 999px;
   background: rgba(255, 250, 240, 0.8);
   padding: 0.75rem 1rem;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 800;
 }
 
@@ -196,15 +196,30 @@ h3 {
   display: inline-flex;
   width: fit-content;
   border-radius: 999px;
-  background: rgba(31, 111, 82, 0.1);
+  background: rgba(201, 133, 28, 0.13);
   padding: 0.5rem 0.75rem;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 800;
 }
 
 .dangerPill {
   background: rgba(158, 63, 47, 0.12);
   color: var(--rust);
+}
+
+.runtimeActionButton {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(158, 63, 47, 0.12);
+  padding: 0.72rem 0.9rem;
+  color: var(--rust);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.runtimeActionButton:hover {
+  background: rgba(158, 63, 47, 0.18);
 }
 
 .stepList {

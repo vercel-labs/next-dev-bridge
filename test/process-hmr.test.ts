@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { processHMR } from '../src/index'
+import { processHMR } from '../src/client'
 
 describe('processHMR', () => {
-  it('is a callable iframe-friendly tracker', () => {
+  it('tracks low-level compiling state without emitting an event', () => {
     const handleHMR = processHMR({
       now: () => '2026-04-25T00:00:00.000Z',
     })
@@ -17,14 +17,12 @@ describe('processHMR', () => {
     )
 
     expect(typeof handleHMR).toBe('function')
-    expect(result.events).toHaveLength(1)
-    expect(result.events[0]).toMatchObject({
-      type: 'build:compiling',
-      buildId: 1,
-    })
+    expect(result.events).toHaveLength(0)
     expect(result.state.phase).toBe('compiling')
+    expect(result.state.building).toBe(true)
+    expect(result.state.buildCycle).toBe(1)
     expect(handleHMR.getSnapshot().phase).toBe('compiling')
-    expect(seen).toEqual([{ type: 'build:compiling', phase: 'compiling' }])
+    expect(seen).toEqual([])
   })
 
   it('reports build errors and recovery', () => {

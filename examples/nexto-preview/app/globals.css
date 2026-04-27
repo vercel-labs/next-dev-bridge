@@ -1,11 +1,11 @@
 :root {
-  --ink: #17201a;
-  --muted: #596459;
+  --ink: #241a10;
+  --muted: #6a5740;
   --paper-strong: #fffaf0;
-  --line: rgba(23, 32, 26, 0.14);
-  --green: #1f6f52;
+  --line: rgba(201, 133, 28, 0.18);
+  --accent: #c9851c;
   --rust: #9e3f2f;
-  --shadow: 0 24px 80px rgba(23, 32, 26, 0.14);
+  --shadow: 0 24px 80px rgba(201, 133, 28, 0.13);
 }
 
 * {
@@ -16,7 +16,7 @@ html {
   min-height: 100%;
   background:
     radial-gradient(circle at 16% 10%, rgba(201, 133, 28, 0.2), transparent 32rem),
-    radial-gradient(circle at 86% 18%, rgba(31, 111, 82, 0.18), transparent 30rem),
+    radial-gradient(circle at 86% 18%, rgba(242, 201, 118, 0.24), transparent 30rem),
     linear-gradient(135deg, #fff8e7 0%, #f3ead4 48%, #e9e1cb 100%);
   color: var(--ink);
 }
@@ -93,7 +93,7 @@ h2 {
 .eyebrow,
 .kicker {
   margin: 0 0 14px;
-  color: var(--green);
+  color: var(--accent);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -139,7 +139,7 @@ h2 {
   border: 1px solid var(--line);
   background: rgba(255, 250, 240, 0.8);
   padding: 0.75rem 1rem;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 800;
 }
 
@@ -152,15 +152,29 @@ h2 {
 .statusPill {
   display: inline-flex;
   width: fit-content;
-  background: rgba(31, 111, 82, 0.1);
+  background: rgba(201, 133, 28, 0.13);
   padding: 0.5rem 0.75rem;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 800;
 }
 
 .dangerPill {
   background: rgba(158, 63, 47, 0.12);
   color: var(--rust);
+}
+
+.runtimeActionButton {
+  border: 1px solid var(--line);
+  background: rgba(158, 63, 47, 0.12);
+  padding: 0.72rem 0.9rem;
+  color: var(--rust);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.runtimeActionButton:hover {
+  background: rgba(158, 63, 47, 0.18);
 }
 
 .runtimeMeter {
@@ -178,27 +192,7 @@ h2 {
   padding-top: 12px;
 }
 
-nextjs-portal,
-nextjs-toast,
-nextjs-static-indicator-toast-wrapper,
-nextjs-dev-tools-indicator,
-script[data-nextjs-dev-overlay],
-#data-devtools-indicator,
-#panel-route,
-.dev-tools-indicator-menu,
-.dev-tools-indicator-inner,
-.dev-tools-indicator-item,
-[data-nextjs-toast],
-[data-nextjs-dialog],
-[data-nextjs-dialog-overlay],
-[data-nextjs-error-overlay],
-[data-nextjs-dev-tools-button],
-[data-nextjs-dev-overlay],
-[data-nextjs-build-indicator],
-[data-nextjs-route-type],
-[data-segment-explorer],
-#__next-build-watcher,
-#__next-prerender-indicator {
+nextjs-portal {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;

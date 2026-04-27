@@ -3,7 +3,6 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
-import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -47,8 +46,6 @@ async function main() {
   let childOutput = ''
   let observer = null
   const context = {
-    chrome: null,
-    chromeUserDataDir: null,
     observerEvents: [],
     waiters: [],
     waitForObserved: null,
@@ -65,13 +62,6 @@ async function main() {
     if (observer) {
       observer.stop()
     }
-    if (context.chrome) {
-      context.chrome.kill('SIGTERM')
-      await waitForExit(context.chrome, 1000)
-    }
-    if (context.chromeUserDataDir) {
-      fs.rmSync(context.chromeUserDataDir, { recursive: true, force: true })
-    }
     const exited = waitForExit(child, 1200)
     child.kill('SIGTERM')
     if (!(await exited)) {
@@ -85,7 +75,6 @@ async function main() {
     }
     if (runRuntime) {
       await waitForHttp(`${DEV_URL}/runtime-effect`, 45000)
-      await resetRuntimeEvents()
     }
     console.log('Next app is ready; connecting HMR observer')
 
@@ -120,7 +109,10 @@ async function main() {
     )
     logSpecial(
       'TEST HMR READY',
-      `initial clean state trigger=${initialBuildOk.trigger} hash=${initialBuildOk.hash || 'n/a'}`
+      joinLogParts([
+        `initial clean state trigger=${initialBuildOk.trigger}`,
+        initialBuildOk.hash ? `hash=${initialBuildOk.hash}` : null,
+      ])
     )
 
     if (runRuntime) {
@@ -195,82 +187,52 @@ function createWaitForObserved(context) {
 
 async function runRuntimeEffectFlow(context) {
   logScenarioHeader('runtime-effect:baseline', [
-    'open /runtime-effect in headless Chrome',
-    'expect clean HMR build state and no runtime errors',
+    'request /runtime-effect while it is healthy',
+    'expect the page to render without a build error',
   ])
-
-  context.chromeUserDataDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'next-hmr-runtime-chrome-')
-  )
-  context.chrome = startHeadlessChrome(
-    `${DEV_URL}/runtime-effect`,
-    context.chromeUserDataDir
-  )
-  const initialRuntimeClear = await waitForRuntimeEvent(
-    (event) =>
-      event.kind === 'clear' &&
-      event.message.includes('mounted with no runtime error'),
-    'initial runtime clean event'
-  )
-  logRuntimeEvent('RUNTIME ERROR GONE', initialRuntimeClear, 0)
+  await requestIgnoringErrors(`${DEV_URL}/runtime-effect`)
 
   logScenarioHeader('runtime-effect:error', [
-    'edit the client effect to call console.error and throw',
-    'expect one clean HMR build followed by 2 runtime errors',
+    'edit the client effect to throw after hydration',
+    'expect one clean HMR build for the runtime page update',
   ])
   const runtimeBuildOk = context.waitForObserved(
     (event) => event.type === 'build:ready',
     'runtime effect error build success',
     { fromNow: true }
   )
-  const runtimeErrors = waitForRuntimeEvents(
-    (event) =>
-      event.kind === 'error' &&
-      (String(event.message || '').includes('Runtime effect console error') ||
-        String(event.message || '').includes('Runtime effect thrown error')),
-    'runtime console.error and thrown error',
-    { count: 2, fromNow: true }
-  )
-  const runtimeErrorSignals = Promise.all([runtimeBuildOk, runtimeErrors])
   applyLoggedScenario('runtime-effect:error')
   await requestIgnoringErrors(`${DEV_URL}/runtime-effect`)
-  const [runtimeBuildOkEvent, runtimeErrorEvents] = await runtimeErrorSignals
+  const runtimeBuildOkEvent = await runtimeBuildOk
   logSpecial(
     'RUNTIME BUILD READY',
-    `throwing effect compiled trigger=${runtimeBuildOkEvent.trigger} hash=${runtimeBuildOkEvent.hash || 'n/a'}`
+    joinLogParts([
+      `throwing effect compiled trigger=${runtimeBuildOkEvent.trigger}`,
+      runtimeBuildOkEvent.hash ? `hash=${runtimeBuildOkEvent.hash}` : null,
+    ])
   )
-  assertRuntimeErrorCategories(runtimeErrorEvents)
-  logRuntimeEvents('RUNTIME ERRORS RECEIVED', runtimeErrorEvents)
 
   logScenarioHeader('runtime-effect:recover', [
     'remove the throwing effect',
-    'expect clean HMR build and runtime error clear event',
+    'expect clean HMR build after recovery',
   ])
   const runtimeRecoverBuildOk = context.waitForObserved(
     (event) => event.type === 'build:ready',
     'runtime effect recovery build success',
     { fromNow: true }
   )
-  const runtimeClear = waitForRuntimeEvent(
-    (event) =>
-      event.kind === 'clear' &&
-      String(event.message || '').includes('Runtime effect error removed'),
-    'runtime error clear',
-    { fromNow: true }
-  )
-  const runtimeRecoverySignals = Promise.all([
-    runtimeRecoverBuildOk,
-    runtimeClear,
-  ])
   applyLoggedScenario('runtime-effect:recover')
   await requestIgnoringErrors(`${DEV_URL}/runtime-effect`)
-  const [runtimeRecoverBuildOkEvent, runtimeClearEvent] =
-    await runtimeRecoverySignals
+  const runtimeRecoverBuildOkEvent = await runtimeRecoverBuildOk
   logSpecial(
     'RUNTIME BUILD READY',
-    `throwing effect removed trigger=${runtimeRecoverBuildOkEvent.trigger} hash=${runtimeRecoverBuildOkEvent.hash || 'n/a'}`
+    joinLogParts([
+      `throwing effect removed trigger=${runtimeRecoverBuildOkEvent.trigger}`,
+      runtimeRecoverBuildOkEvent.hash
+        ? `hash=${runtimeRecoverBuildOkEvent.hash}`
+        : null,
+    ])
   )
-  logRuntimeEvent('RUNTIME ERROR GONE', runtimeClearEvent, 0)
 }
 
 async function runBuildErrorFlow(context) {
@@ -362,22 +324,6 @@ function logObservedEvent(event) {
   }
 }
 
-function logRuntimeEvent(label, event, count) {
-  logSpecial(
-    label,
-    `count=${count} id=${event.id || 'n/a'} source=${event.source || 'runtime-effect'} message="${event.message}"`
-  )
-}
-
-function logRuntimeEvents(label, events) {
-  logSpecial(label, `count=${events.length}`)
-
-  for (let index = 0; index < events.length; index += 1) {
-    const event = events[index]
-    console.log(indent(formatRuntimeErrorBlock(event, index), '    '))
-  }
-}
-
 function applyLoggedScenario(name) {
   applyScenario(name, () => {})
 }
@@ -397,20 +343,8 @@ function logSpecial(label, message) {
   console.log(`>>> [${label}] ${message}`)
 }
 
-function assertRuntimeErrorCategories(events) {
-  const categories = new Set(events.map((event) => event.category))
-
-  if (!categories.has('console.error')) {
-    throw new Error(
-      `Expected a console.error runtime event. Got: ${[...categories].join(', ')}`
-    )
-  }
-
-  if (!categories.has('window.error')) {
-    throw new Error(
-      `Expected a window.error runtime event. Got: ${[...categories].join(', ')}`
-    )
-  }
+function joinLogParts(parts) {
+  return parts.filter(Boolean).join(' ')
 }
 
 function assertFormattedErrors(event, label) {
@@ -460,211 +394,6 @@ function requestIgnoringErrors(url) {
   })
 }
 
-function requestJson(url, options = {}) {
-  return new Promise((resolve, reject) => {
-    const req = http.request(url, options, (res) => {
-      const chunks = []
-      res.on('data', (chunk) => chunks.push(chunk))
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8')
-        try {
-          resolve({
-            statusCode: res.statusCode,
-            body: body ? JSON.parse(body) : null,
-          })
-        } catch (error) {
-          reject(error)
-        }
-      })
-    })
-    req.on('error', reject)
-    req.end()
-  })
-}
-
-async function resetRuntimeEvents() {
-  await requestJson(`${DEV_URL}/api/runtime-events`, {
-    method: 'DELETE',
-  })
-}
-
-function waitForRuntimeEvent(matches, label, options = {}) {
-  const timeoutMs = options.timeoutMs || 30000
-  const startedAt = Date.now()
-  let lastEvents = []
-  let lastPollError = null
-  let baselineId = 0
-
-  return new Promise((resolve, reject) => {
-    const tick = async () => {
-      try {
-        const response = await requestJson(`${DEV_URL}/api/runtime-events`)
-        const events = response.body.events || []
-
-        if (options.fromNow && baselineId === 0) {
-          baselineId = events.reduce(
-            (maxId, event) => Math.max(maxId, event.id || 0),
-            0
-          )
-        }
-
-        lastEvents = events
-        const event = events.find((candidate) => {
-          if (options.fromNow && candidate.id <= baselineId) {
-            return false
-          }
-
-          try {
-            return matches(candidate)
-          } catch (error) {
-            lastPollError = error
-            return false
-          }
-        })
-
-        if (event) {
-          resolve(event)
-          return
-        }
-      } catch (error) {
-        lastPollError = error
-      }
-
-      if (Date.now() - startedAt > timeoutMs) {
-        const diagnostics = [
-          `Timed out waiting for ${label}. Runtime events: ${JSON.stringify(
-            lastEvents
-          )}`,
-        ]
-        if (lastPollError) {
-          diagnostics.push(
-            `Last poll error: ${lastPollError.stack || lastPollError.message || lastPollError}`
-          )
-        }
-        reject(
-          new Error(diagnostics.join('\n'))
-        )
-        return
-      }
-
-      setTimeout(tick, 250)
-    }
-
-    tick()
-  })
-}
-
-function waitForRuntimeEvents(matches, label, options = {}) {
-  const timeoutMs = options.timeoutMs || 30000
-  const expectedCount = options.count || 1
-  const startedAt = Date.now()
-  let lastEvents = []
-  let lastPollError = null
-  let baselineId = 0
-
-  return new Promise((resolve, reject) => {
-    const tick = async () => {
-      try {
-        const response = await requestJson(`${DEV_URL}/api/runtime-events`)
-        const events = response.body.events || []
-
-        if (options.fromNow && baselineId === 0) {
-          baselineId = events.reduce(
-            (maxId, event) => Math.max(maxId, event.id || 0),
-            0
-          )
-        }
-
-        lastEvents = events
-        const matchingEvents = events.filter((candidate) => {
-          if (options.fromNow && candidate.id <= baselineId) {
-            return false
-          }
-
-          try {
-            return matches(candidate)
-          } catch (error) {
-            lastPollError = error
-            return false
-          }
-        })
-
-        if (matchingEvents.length >= expectedCount) {
-          resolve(matchingEvents.slice(0, expectedCount))
-          return
-        }
-      } catch (error) {
-        lastPollError = error
-      }
-
-      if (Date.now() - startedAt > timeoutMs) {
-        const diagnostics = [
-          `Timed out waiting for ${label}. Runtime events: ${JSON.stringify(
-            lastEvents
-          )}`,
-        ]
-        if (lastPollError) {
-          diagnostics.push(
-            `Last poll error: ${lastPollError.stack || lastPollError.message || lastPollError}`
-          )
-        }
-        reject(
-          new Error(diagnostics.join('\n'))
-        )
-        return
-      }
-
-      setTimeout(tick, 250)
-    }
-
-    tick()
-  })
-}
-
-function startHeadlessChrome(url, userDataDir) {
-  const chromePath = findChromePath()
-  const child = spawn(
-    chromePath,
-    [
-      '--headless=new',
-      '--disable-gpu',
-      '--disable-background-networking',
-      '--disable-default-apps',
-      '--disable-extensions',
-      '--no-first-run',
-      `--user-data-dir=${userDataDir}`,
-      url,
-    ],
-    {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    }
-  )
-
-  child.stderr.on('data', () => {})
-  return child
-}
-
-function findChromePath() {
-  const candidates = [
-    process.env.CHROME_BIN,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    'google-chrome',
-    'chromium',
-  ].filter(Boolean)
-
-  for (const candidate of candidates) {
-    if (candidate.includes('/') && fs.existsSync(candidate)) {
-      return candidate
-    }
-  }
-
-  throw new Error(
-    'No Chrome/Chromium binary found. Set CHROME_BIN to run the runtime browser test.'
-  )
-}
-
 function waitForExit(child, timeoutMs) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs)
@@ -697,68 +426,6 @@ function formatTopLevelFailure(label, reason) {
   }
 
   return `${label}: ${JSON.stringify(reason)}`
-}
-
-function formatRuntimeErrorBlock(event, index) {
-  const lines = [
-    `runtime error ${index + 1} [${event.category || 'runtime'}] id=${event.id} source=${event.source || 'runtime-effect'}`,
-    '  message:',
-    indent(event.message, '    '),
-  ]
-  const mappedFrames = formatMappedFrames(event.mappedFrames)
-
-  if (mappedFrames) {
-    lines.push(mappedFrames)
-  }
-
-  return lines.join('\n')
-}
-
-function formatMappedFrames(mappedFrames) {
-  if (!Array.isArray(mappedFrames) || mappedFrames.length === 0) {
-    return ''
-  }
-
-  const resolvedFrames = mappedFrames
-    .filter((entry) => entry.status === 'fulfilled')
-    .map((entry) => entry.value)
-    .filter((value) => value && value.originalStackFrame)
-
-  const visibleFrames = resolvedFrames
-    .filter((value) => !value.originalStackFrame.ignored)
-    .slice(0, 5)
-
-  if (visibleFrames.length === 0) {
-    const rejectedReasons = mappedFrames
-      .filter((entry) => entry.status === 'rejected')
-      .map((entry) => entry.reason)
-      .filter(Boolean)
-
-    if (rejectedReasons.length > 0) {
-      return `  sourcemap failed:\n${rejectedReasons
-        .slice(0, 3)
-        .map((reason) => `    ${reason}`)
-        .join('\n')}`
-    }
-
-    return ''
-  }
-
-  const lines = ['  sourcemapped trace:']
-  for (const value of visibleFrames) {
-    const frame = value.originalStackFrame
-    lines.push(
-      `    at ${frame.methodName || '<anonymous>'} (${frame.file}:${frame.line1}:${frame.column1 ?? 1})`
-    )
-  }
-
-  const firstCodeFrame = visibleFrames.find((value) => value.originalCodeFrame)
-  if (firstCodeFrame?.originalCodeFrame) {
-    lines.push('  code frame:')
-    lines.push(indent(firstCodeFrame.originalCodeFrame, '    '))
-  }
-
-  return lines.join('\n')
 }
 
 main().catch((error) => {

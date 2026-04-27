@@ -57,17 +57,12 @@ export const runtimeNote =
 const RUNTIME_EFFECT_GOOD = `'use client'
 
 import { useEffect, useState } from 'react'
-import { reportRuntimeEvent } from './runtime-reporter'
 
 export function RuntimeEffectClient() {
   const [effectRuns, setEffectRuns] = useState(0)
 
   useEffect(() => {
     setEffectRuns((value) => value + 1)
-    reportRuntimeEvent(
-      'clear',
-      'Runtime effect page mounted with no runtime error.'
-    )
   }, [])
 
   return (
@@ -97,18 +92,13 @@ export function RuntimeEffectClient() {
 const RUNTIME_EFFECT_ERROR = `'use client'
 
 import { useEffect, useState } from 'react'
-import { installRuntimeEventReporter } from './runtime-reporter'
 
 export function RuntimeEffectClient() {
   const [effectRuns, setEffectRuns] = useState(0)
+  const [manualErrors, setManualErrors] = useState(0)
 
   useEffect(() => {
-    installRuntimeEventReporter()
     setEffectRuns((value) => value + 1)
-
-    console.error(
-      new Error('Runtime effect console error: useEffect reported a console failure.')
-    )
 
     const timer = setTimeout(() => {
       throw new Error('Runtime effect thrown error: useEffect fired after HMR.')
@@ -117,14 +107,32 @@ export function RuntimeEffectClient() {
     return () => clearTimeout(timer)
   }, [])
 
+  function throwManualRuntimeError() {
+    const nextCount = manualErrors + 1
+    setManualErrors(nextCount)
+
+    setTimeout(() => {
+      throw new Error(
+        \`Manual runtime effect error #\${nextCount}: button-triggered runtime failure.\`
+      )
+    }, 0)
+  }
+
   return (
     <div className="panel">
       <span className="statusPill dangerPill">Runtime error armed</span>
       <h2>Throwing useEffect installed</h2>
       <p>
-        This HMR update compiled successfully. The browser effect now emits a
-        console.error and throws a runtime error after hydration.
+        This HMR update compiled successfully. The browser effect now throws a
+        runtime error after hydration.
       </p>
+      <button
+        className="runtimeActionButton"
+        onClick={throwManualRuntimeError}
+        type="button"
+      >
+        Throw another runtime error ({manualErrors})
+      </button>
 
       <div className="runtimeMeter">
         <div className="meterRow">
@@ -144,17 +152,12 @@ export function RuntimeEffectClient() {
 const RUNTIME_EFFECT_RECOVER = `'use client'
 
 import { useEffect, useState } from 'react'
-import { reportRuntimeEvent } from './runtime-reporter'
 
 export function RuntimeEffectClient() {
   const [effectRuns, setEffectRuns] = useState(0)
 
   useEffect(() => {
     setEffectRuns((value) => value + 1)
-    reportRuntimeEvent(
-      'clear',
-      'Runtime effect error removed after HMR recovery.'
-    )
   }, [])
 
   return (
@@ -245,6 +248,11 @@ const scenarios = {
         file: RUNTIME_MODE_FILE,
         content: RUNTIME_MODE_MULTI,
       },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
+      },
     ],
   },
   'runtime:render': {
@@ -255,6 +263,11 @@ const scenarios = {
         path: RUNTIME_MODE_PATH,
         file: RUNTIME_MODE_FILE,
         content: RUNTIME_MODE_RENDER,
+      },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
       },
     ],
   },
@@ -267,6 +280,11 @@ const scenarios = {
         file: RUNTIME_MODE_FILE,
         content: RUNTIME_MODE_GOOD,
       },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
+      },
     ],
   },
   'runtime-effect:clean': {
@@ -278,16 +296,26 @@ const scenarios = {
         file: RUNTIME_EFFECT_FILE,
         content: RUNTIME_EFFECT_GOOD,
       },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
+      },
     ],
   },
   'runtime-effect:error': {
-    description: 'Add a useEffect that logs console.error and throws.',
+    description: 'Add a useEffect that throws a runtime error.',
     route: '/runtime-effect',
     edits: [
       {
         path: RUNTIME_EFFECT_PATH,
         file: RUNTIME_EFFECT_FILE,
         content: RUNTIME_EFFECT_ERROR,
+      },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
       },
     ],
   },
@@ -299,6 +327,11 @@ const scenarios = {
         path: RUNTIME_EFFECT_PATH,
         file: RUNTIME_EFFECT_FILE,
         content: RUNTIME_EFFECT_RECOVER,
+      },
+      {
+        path: BUILD_SUBJECT_PATH,
+        file: BUILD_SUBJECT_FILE,
+        content: BUILD_SUBJECT_GOOD,
       },
     ],
   },

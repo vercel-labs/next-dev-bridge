@@ -5,7 +5,6 @@ import {
 } from './index.js'
 import {
   DEFAULT_DEV_SERVER_URL,
-  DEFAULT_HMR_PATH,
 } from './websocket.js'
 
 let args
@@ -29,21 +28,12 @@ if (args.command !== 'watch') {
 const observer = connect(
   {
     url: args.url || DEFAULT_DEV_SERVER_URL,
-    path: args.path || DEFAULT_HMR_PATH,
-    id: args.id,
   },
   {
     reconnect: !args.noReconnect,
-    maxReconnects: args.once ? 0 : Infinity,
-    verbose: args.verbose || args.raw,
-    raw: args.raw,
+    verbose: args.verbose,
   },
-  (event, state) => {
-    if (args.json) {
-      process.stdout.write(`${JSON.stringify({ event, state })}\n`)
-      return
-    }
-
+  (event) => {
     printHumanEvent(event, args)
   }
 )
@@ -62,12 +52,7 @@ function parseArgs(argv) {
   const result = {
     command: 'watch',
     url: null,
-    path: DEFAULT_HMR_PATH,
-    id: null,
-    json: false,
     verbose: false,
-    raw: false,
-    once: false,
     noReconnect: false,
     help: false,
   }
@@ -85,26 +70,10 @@ function parseArgs(argv) {
 
     if (arg === '--help' || arg === '-h') {
       result.help = true
-    } else if (arg === '--json') {
-      result.json = true
     } else if (arg === '--verbose' || arg === '-v') {
       result.verbose = true
-    } else if (arg === '--raw') {
-      result.raw = true
-      result.verbose = true
-    } else if (arg === '--once') {
-      result.once = true
-      result.noReconnect = true
     } else if (arg === '--no-reconnect') {
       result.noReconnect = true
-    } else if (arg === '--path') {
-      result.path = requireValue(args, (index += 1), '--path')
-    } else if (arg.startsWith('--path=')) {
-      result.path = arg.slice('--path='.length)
-    } else if (arg === '--id') {
-      result.id = requireValue(args, (index += 1), '--id')
-    } else if (arg.startsWith('--id=')) {
-      result.id = arg.slice('--id='.length)
     } else if (arg === '--url') {
       result.url = requireValue(args, (index += 1), '--url')
     } else if (arg.startsWith('--url=')) {
@@ -128,13 +97,13 @@ function requireValue(argv, index, flag) {
 }
 
 function printHelp() {
-  process.stdout.write(`nextd
+  process.stdout.write(`nexto
 
 Watch a running Next.js dev server and print normalized build state events.
 
 Usage:
-  nextd watch [url] [options]
-  nextd [url] [options]
+  nexto watch [url] [options]
+  nexto [url] [options]
   node dist/cli.js watch [url] [options]
   bun run watch -- [url] [options]
 
@@ -142,12 +111,7 @@ Arguments:
   url                 Dev server URL or port. Defaults to ${DEFAULT_DEV_SERVER_URL}
 
 Options:
-  --path <path>       HMR websocket path. Defaults to ${DEFAULT_HMR_PATH}
-  --id <id>           Optional App Router request id query value
   --verbose, -v       Also print internal HMR message summaries
-  --raw               Include raw internal HMR messages in JSON output
-  --json              Print newline-delimited JSON events
-  --once              Do not reconnect after disconnect
   --no-reconnect      Disable reconnect loop
   --help, -h          Show this help
 `)
@@ -183,9 +147,6 @@ function printHumanEvent(event, args) {
     case 'observer:error':
       log(`>>> [OBSERVER ERROR] ${event.error.message}`)
       return
-    case 'build:compiling':
-      log(`>>> [COMPILING] build=${event.buildId}`)
-      return
     case 'build:ready':
       log(formatBuildReady('READY', event))
       return
@@ -193,9 +154,7 @@ function printHumanEvent(event, args) {
       log(formatBuildReady('RECOVERED', event))
       return
     case 'build:error':
-      log(
-        `>>> [ERROR] count=${event.errors.length} hash=${event.hash || 'n/a'} change=${event.change}`
-      )
+      log(formatBuildError(event))
       printErrors(event.errors)
       return
     case 'session:reconnect-abandoned':
@@ -210,11 +169,22 @@ function printHumanEvent(event, args) {
 
 function formatBuildReady(label, event) {
   const parts = [`>>> [${label}]`]
-  parts.push(`hash=${event.hash || 'n/a'}`)
+  if (event.hash) {
+    parts.push(`hash=${event.hash}`)
+  }
   parts.push(`warnings=${event.warnings.length}`)
   if (event.trigger === 'sync') {
     parts.push('state=sync')
   }
+  return parts.join(' ')
+}
+
+function formatBuildError(event) {
+  const parts = [`>>> [ERROR]`, `count=${event.errors.length}`]
+  if (event.hash) {
+    parts.push(`hash=${event.hash}`)
+  }
+  parts.push(`change=${event.change}`)
   return parts.join(' ')
 }
 

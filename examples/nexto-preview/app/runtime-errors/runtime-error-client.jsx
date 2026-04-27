@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { runtimeMode, runtimeNote } from './runtime-mode'
 
 export function RuntimeErrorClient() {
+  const scheduledNoteRef = useRef(null)
   const [refreshCount, setRefreshCount] = useState(0)
 
   useEffect(() => {
@@ -12,15 +13,15 @@ export function RuntimeErrorClient() {
 
   useEffect(() => {
     if (runtimeMode !== 'multi') {
-      window.__NEXTD_EXAMPLE_RUNTIME_MARKER__ = null
+      scheduledNoteRef.current = null
       return
     }
 
-    if (window.__NEXTD_EXAMPLE_RUNTIME_MARKER__ === runtimeNote) {
+    if (scheduledNoteRef.current === runtimeNote) {
       return
     }
 
-    window.__NEXTD_EXAMPLE_RUNTIME_MARKER__ = runtimeNote
+    scheduledNoteRef.current = runtimeNote
 
     const timers = [
       setTimeout(() => {

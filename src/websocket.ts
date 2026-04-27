@@ -8,9 +8,6 @@ export const DEFAULT_HMR_PATH = '/_next/webpack-hmr'
 
 export interface NextHmrWebSocketOptions {
   url?: string
-  path?: string
-  id?: string
-  headers?: Record<string, string>
 }
 
 export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
@@ -25,10 +22,7 @@ export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
 
   const protocol =
     base.protocol === 'https:' || base.protocol === 'wss:' ? 'wss:' : 'ws:'
-  const path = options.path || base.pathname || DEFAULT_HMR_PATH
-  const pathname =
-    path && path !== '/' ? ensureLeadingSlash(path) : DEFAULT_HMR_PATH
-  const wsUrl = new URL(`${protocol}//${base.host}${pathname}`)
+  const wsUrl = new URL(`${protocol}//${base.host}${DEFAULT_HMR_PATH}`)
 
   if (base.search) {
     for (const [name, value] of base.searchParams) {
@@ -36,18 +30,11 @@ export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
     }
   }
 
-  if (options.id) {
-    wsUrl.searchParams.set('id', options.id)
-  }
-
   return wsUrl
 }
 
-export function connectWebSocket(
-  url: URL,
-  options: { headers?: Record<string, string> } = {}
-) {
-  const client = new MinimalWebSocketClient(url, options)
+export function connectWebSocket(url: URL) {
+  const client = new MinimalWebSocketClient(url)
   client.connect()
   return client
 }
@@ -71,7 +58,6 @@ function normalizeDevServerUrlInput(input: string) {
 
 class MinimalWebSocketClient extends EventEmitter {
   url: URL
-  options: { headers?: Record<string, string> }
   socket: net.Socket | tls.TLSSocket | null
   handshakeBuffer: Buffer
   frameBuffer: Buffer
@@ -80,10 +66,9 @@ class MinimalWebSocketClient extends EventEmitter {
   fragments: { opcode: number; chunks: Buffer[] } | null
   expectedAccept?: string
 
-  constructor(url: URL, options: { headers?: Record<string, string> }) {
+  constructor(url: URL) {
     super()
     this.url = url
-    this.options = options
     this.socket = null
     this.handshakeBuffer = Buffer.alloc(0)
     this.frameBuffer = Buffer.alloc(0)
@@ -154,12 +139,8 @@ class MinimalWebSocketClient extends EventEmitter {
       'Connection: Upgrade',
       `Sec-WebSocket-Key: ${key}`,
       'Sec-WebSocket-Version: 13',
-      'User-Agent: nextd',
+      'User-Agent: nexto',
     ]
-
-    for (const [name, value] of Object.entries(this.options.headers || {})) {
-      headerLines.push(`${name}: ${value}`)
-    }
 
     this.socket.write(`${headerLines.join('\r\n')}\r\n\r\n`)
   }
@@ -411,8 +392,4 @@ function parseClosePayload(payload: Buffer) {
     code: payload.readUInt16BE(0),
     reason: payload.subarray(2).toString('utf8') || undefined,
   }
-}
-
-function ensureLeadingSlash(value: string) {
-  return value.startsWith('/') ? value : `/${value}`
 }

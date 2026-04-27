@@ -7,10 +7,15 @@ const root = path.resolve(import.meta.dirname, '..')
 const scenarioArgs = process.argv.slice(2)
 const bunBin = process.versions.bun ? process.execPath : 'bun'
 
-await run('processHMR unit tests', 'node', [
+await run('unit tests', 'node', [
   path.join(root, 'node_modules', 'vitest', 'vitest.mjs'),
   'run',
-  path.join(root, 'test', 'process-hmr.test.ts'),
+  path.join(root, 'test'),
+])
+
+await run('package build', bunBin, [
+  'run',
+  'build',
 ])
 
 await run('Next dev integration flow', bunBin, [

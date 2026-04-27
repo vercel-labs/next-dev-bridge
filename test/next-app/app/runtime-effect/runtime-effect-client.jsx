@@ -1,17 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { reportRuntimeEvent } from './runtime-reporter'
 
 export function RuntimeEffectClient() {
   const [effectRuns, setEffectRuns] = useState(0)
 
   useEffect(() => {
     setEffectRuns((value) => value + 1)
-    reportRuntimeEvent(
-      'clear',
-      'Runtime effect page mounted with no runtime error.'
-    )
   }, [])
 
   return (

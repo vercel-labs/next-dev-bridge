@@ -1,8 +1,8 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'nextd Web Example',
-  description: 'Example app for observing Next.js dev HMR events with nextd.',
+  title: 'nexto Web Example',
+  description: 'Example app for observing Next.js dev HMR events with nexto.',
 }
 
 export default function RootLayout({ children }) {
