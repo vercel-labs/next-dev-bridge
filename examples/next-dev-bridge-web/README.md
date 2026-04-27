@@ -43,15 +43,17 @@ Build Command: default
 Output Directory: default
 ```
 
+The web app and the sandbox preview fixture depend on the published
+`next-dev-bridge@0.1.0` package, so no custom Vercel install or build command is
+required.
+
 No extra environment variable is required for the default Vercel deployment.
 When `VERCEL` is defined, the viewer API routes use Sandbox mode automatically.
 
 On first load, the deployed viewer creates an empty Vercel Sandbox, writes the
-library package to the sandbox root and the bundled `preview-fixture` files to
-`preview/`, runs `npm install && npm run build` for the library, installs the
-preview fixture with `next-dev-bridge` resolved through `file:..`, starts that
-fixture in Next dev mode through `dev-server.cjs`, and points the iframe at the
-sandbox URL.
+bundled `preview-fixture` files to `preview/`, installs the fixture
+dependencies from npm, starts that fixture in Next dev mode through
+`dev-server.cjs`, and points the iframe at the sandbox URL.
 
 For non-Vercel testing, `NEXT_DEV_BRIDGE_CONTROL_MODE=sandbox` still forces
 Sandbox mode, and `NEXT_DEV_BRIDGE_CONTROL_MODE=local` forces local preview mode.
