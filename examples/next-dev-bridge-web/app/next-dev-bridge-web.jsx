@@ -245,6 +245,32 @@ export function NextDevBridgeWeb() {
       setApplyStatus(`Sandbox observer starting - ${payload.target}`)
     })
 
+    let restartingStaleSandbox = false
+    source.addEventListener('sandbox-stale', (message) => {
+      if (restartingStaleSandbox) {
+        return
+      }
+
+      restartingStaleSandbox = true
+      const payload = JSON.parse(message.data)
+      setApplyStatus('Sandbox expired - starting a new preview')
+
+      fetchPreviewSession(controlOrigin, payload.sandboxId || sandboxId, {
+        restart: true,
+      })
+        .then((preview) => {
+          source.close()
+          applyPreviewPayload(preview)
+          clearVisibleErrors(true)
+          setPreviewVersion((value) => value + 1)
+          setApplyStatus('Sandbox preview ready')
+        })
+        .catch((error) => {
+          restartingStaleSandbox = false
+          setApplyStatus(error.message || String(error))
+        })
+    })
+
     source.addEventListener('local-observer', () => {
       setApplyStatus('Ready')
     })

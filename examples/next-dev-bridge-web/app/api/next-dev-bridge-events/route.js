@@ -6,6 +6,7 @@ import {
   createSessionCookie,
   getPreviewSession,
   getPublicSession,
+  isSandboxStoppedError,
 } from '../_lib/control.js'
 
 export const dynamic = 'force-dynamic'
@@ -176,6 +177,15 @@ function startSandboxObserverStream(session, send) {
       }
     } catch (error) {
       if (!abortController.signal.aborted) {
+        if (isSandboxStoppedError(error)) {
+          send('sandbox-stale', {
+            error: serializeError(error),
+            preview: getPublicSession(session),
+            sandboxId: session.sandboxId,
+          })
+          return
+        }
+
         send('next-dev-bridge', {
           event: {
             type: 'session:error',

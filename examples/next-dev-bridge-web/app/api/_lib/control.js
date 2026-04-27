@@ -110,7 +110,7 @@ export async function stopPreviewSession(request) {
 }
 
 export async function getScenarioPayloadsForRequest(request) {
-  const session = await getPreviewSession(request)
+  let session = await getPreviewSession(request)
 
   if (session.mode === 'local') {
     return {
@@ -119,19 +119,23 @@ export async function getScenarioPayloadsForRequest(request) {
     }
   }
 
-  const result = await runCheckedCommand(session.sandbox, 'load scenarios', {
-    cmd: 'node',
-    args: [
-      '-e',
-      `const { getScenarioPayloads } = require('./scenarios.cjs')
-process.stdout.write(JSON.stringify(getScenarioPayloads()))`,
-    ],
-    cwd: SANDBOX_PREVIEW_ROOT,
-  })
+  try {
+    return {
+      session,
+      scenarios: await getScenarioPayloadsFromSandbox(session.sandbox),
+    }
+  } catch (error) {
+    if (!isSandboxStoppedError(error)) {
+      throw error
+    }
 
-  return {
-    session,
-    scenarios: JSON.parse(await result.stdout()),
+    clearActiveSession(session.sandboxId)
+    session = await createSandboxSession()
+
+    return {
+      session,
+      scenarios: await getScenarioPayloadsFromSandbox(session.sandbox),
+    }
   }
 }
 
@@ -163,6 +167,67 @@ export async function applyScenarioEditForRequest(request, body) {
     }
   }
 
+  try {
+    return await applySandboxScenarioEdit(session, body)
+  } catch (error) {
+    if (!isSandboxStoppedError(error)) {
+      throw error
+    }
+
+    clearActiveSession(session.sandboxId)
+    return applySandboxScenarioEdit(await createSandboxSession(), body)
+  }
+}
+
+export function getPublicSession(session) {
+  return {
+    mode: session.mode,
+    previewOrigin: session.previewOrigin,
+    sandboxId: session.sandboxId,
+    status: session.status,
+    targetUrl: session.targetUrl,
+  }
+}
+
+export function createSessionCookie(session) {
+  if (!session.sandboxId) {
+    return null
+  }
+
+  return `${SESSION_COOKIE}=${encodeURIComponent(
+    session.sandboxId
+  )}; Path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE_SECONDS}`
+}
+
+export class BadRequestError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = 'BadRequestError'
+    this.statusCode = 400
+  }
+}
+
+export function isSandboxStoppedError(error) {
+  const status = error?.response?.status || error?.status
+  const code = error?.json?.error?.code || error?.code || ''
+  const text = [
+    code,
+    error?.message,
+    error?.text,
+    error?.json?.error?.message,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  return (
+    status === 410 ||
+    code === 'sandbox_stopped' ||
+    text.includes('sandbox_stopped') ||
+    text.includes('no longer available')
+  )
+}
+
+async function applySandboxScenarioEdit(session, body) {
   if (typeof body.scenario === 'string') {
     await runCheckedCommand(session.sandbox, `apply ${body.scenario}`, {
       cmd: 'node',
@@ -202,34 +267,6 @@ writeScenarioFile(relativePath, content)`,
   }
 }
 
-export function getPublicSession(session) {
-  return {
-    mode: session.mode,
-    previewOrigin: session.previewOrigin,
-    sandboxId: session.sandboxId,
-    status: session.status,
-    targetUrl: session.targetUrl,
-  }
-}
-
-export function createSessionCookie(session) {
-  if (!session.sandboxId) {
-    return null
-  }
-
-  return `${SESSION_COOKIE}=${encodeURIComponent(
-    session.sandboxId
-  )}; Path=/; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE_SECONDS}`
-}
-
-export class BadRequestError extends Error {
-  constructor(message) {
-    super(message)
-    this.name = 'BadRequestError'
-    this.statusCode = 400
-  }
-}
-
 async function getScenarioPayloadsFromSandbox(sandbox) {
   const result = await runCheckedCommand(sandbox, 'load scenarios', {
     cmd: 'node',
@@ -255,10 +292,14 @@ async function getExistingSandboxSession(requestedSandboxId) {
     const sandbox = await Sandbox.get({ sandboxId })
     return ensureSandboxSession(sandbox)
   } catch {
-    if (activeSession?.sandboxId === sandboxId) {
-      activeSession = null
-    }
+    clearActiveSession(sandboxId)
     return null
+  }
+}
+
+function clearActiveSession(sandboxId) {
+  if (!sandboxId || activeSession?.sandboxId === sandboxId) {
+    activeSession = null
   }
 }
 
