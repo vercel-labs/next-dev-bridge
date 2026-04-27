@@ -39,7 +39,7 @@ To deploy the viewer app on Vercel while still running the preview app with
 ```text
 Root Directory: repo root (leave empty in Vercel)
 Framework Preset: Next.js
-Install Command: bun install && bun run build && bun install --cwd examples/next-dev-bridge-web
+Install Command: bun install && bun x --no-install tsc -p tsconfig.json && bun install --cwd examples/next-dev-bridge-web
 Build Command: bun run --cwd examples/next-dev-bridge-web build
 Output Directory: examples/next-dev-bridge-web/.next
 ```

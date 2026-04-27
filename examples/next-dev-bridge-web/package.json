@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npx --no-install tsc -p ../../tsconfig.json && next build",
+    "build": "next build",
     "dev": "next dev",
     "start": "next start"
   },
