@@ -9,7 +9,7 @@ const APP_ROOT = process.env.NEXT_DEV_BRIDGE_PREVIEW_ROOT
   : __dirname
 const BUILD_SUBJECT_PATH = 'app/build-errors/subject.js'
 const RUNTIME_MODE_PATH = 'app/runtime-errors/runtime-mode.js'
-const RUNTIME_EFFECT_PATH = 'app/runtime-effect/runtime-effect-client.jsx'
+const RUNTIME_EFFECT_PATH = 'app/runtime-errors/runtime-effect-client.jsx'
 const BUILD_SUBJECT_FILE = path.join(APP_ROOT, BUILD_SUBJECT_PATH)
 const RUNTIME_MODE_FILE = path.join(APP_ROOT, RUNTIME_MODE_PATH)
 const RUNTIME_EFFECT_FILE = path.join(APP_ROOT, RUNTIME_EFFECT_PATH)
@@ -39,7 +39,7 @@ export function describeBuildStatus() {
 const RUNTIME_MODE_GOOD = `export const runtimeMode = 'ok'
 
 export const runtimeNote =
-  'The runtime route is healthy. Apply runtime:multi while this page is open to trigger multiple browser runtime errors.'
+  'The runtime route is healthy. Apply runtime:multi or runtime-effect:error while this page is open to trigger browser runtime errors.'
 `
 
 const RUNTIME_MODE_MULTI = `export const runtimeMode = 'multi'
@@ -81,7 +81,7 @@ export function RuntimeEffectClient() {
         </div>
         <div className="meterRow">
           <strong>Runtime source</strong>
-          <code>app/runtime-effect/runtime-effect-client.jsx</code>
+          <code>app/runtime-errors/runtime-effect-client.jsx</code>
         </div>
       </div>
     </div>
@@ -141,7 +141,7 @@ export function RuntimeEffectClient() {
         </div>
         <div className="meterRow">
           <strong>Runtime source</strong>
-          <code>app/runtime-effect/runtime-effect-client.jsx</code>
+          <code>app/runtime-errors/runtime-effect-client.jsx</code>
         </div>
       </div>
     </div>
@@ -176,7 +176,7 @@ export function RuntimeEffectClient() {
         </div>
         <div className="meterRow">
           <strong>Runtime source</strong>
-          <code>app/runtime-effect/runtime-effect-client.jsx</code>
+          <code>app/runtime-errors/runtime-effect-client.jsx</code>
         </div>
       </div>
     </div>
@@ -288,8 +288,8 @@ const scenarios = {
     ],
   },
   'runtime-effect:clean': {
-    description: 'Restore the runtime-effect page to a clean useEffect.',
-    route: '/runtime-effect',
+    description: 'Restore the runtime error route to a clean useEffect.',
+    route: '/runtime-errors',
     edits: [
       {
         path: RUNTIME_EFFECT_PATH,
@@ -305,7 +305,7 @@ const scenarios = {
   },
   'runtime-effect:error': {
     description: 'Add a useEffect that throws a runtime error.',
-    route: '/runtime-effect',
+    route: '/runtime-errors',
     edits: [
       {
         path: RUNTIME_EFFECT_PATH,
@@ -320,8 +320,8 @@ const scenarios = {
     ],
   },
   'runtime-effect:recover': {
-    description: 'Remove the throwing useEffect from the runtime-effect page.',
-    route: '/runtime-effect',
+    description: 'Remove the throwing useEffect from the runtime error route.',
+    route: '/runtime-errors',
     edits: [
       {
         path: RUNTIME_EFFECT_PATH,

@@ -31,7 +31,7 @@ const PROBE_RETRY_DELAY_MS = Number(
 const PROBE_DEFAULT_ATTEMPTS = Number(
   process.env.NEXT_DEV_BRIDGE_PROBE_DEFAULT_ATTEMPTS || 4
 )
-const FIXTURE_VERSION = '2026-04-27-published-next-dev-bridge-0.1.0'
+const FIXTURE_VERSION = '2026-04-27-runtime-effect-merged'
 const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
 const PREVIEW_FIXTURE_FILE_PATHS = [
   'app/api/next-dev-bridge-stack-frames/route.js',
@@ -40,9 +40,8 @@ const PREVIEW_FIXTURE_FILE_PATHS = [
   'app/globals.css',
   'app/layout.jsx',
   'app/page.jsx',
-  'app/runtime-effect/page.jsx',
-  'app/runtime-effect/runtime-effect-client.jsx',
   'app/runtime-errors/page.jsx',
+  'app/runtime-errors/runtime-effect-client.jsx',
   'app/runtime-errors/runtime-error-client.jsx',
   'app/runtime-errors/runtime-mode.js',
   'dev-server.cjs',

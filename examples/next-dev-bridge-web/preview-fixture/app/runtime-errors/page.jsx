@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { RuntimeErrorClient } from './runtime-error-client'
+import { RuntimeEffectClient } from './runtime-effect-client'
 
 export default function RuntimeErrorsPage() {
   return (
@@ -7,11 +8,13 @@ export default function RuntimeErrorsPage() {
       <div className="pageHeader">
         <section>
           <p className="eyebrow">Runtime error preview</p>
-          <h1>Trigger multiple browser runtime errors.</h1>
+          <h1>Trigger browser runtime errors.</h1>
           <p className="lede">
-            This route renders a client component. The editor rewrites
-            <code>app/runtime-errors/runtime-mode.js</code>, then Fast Refresh
-            lets browser runtime errors fire while the overlay stays hidden.
+            This route renders client components. The editor rewrites
+            <code>app/runtime-errors/runtime-mode.js</code> and
+            <code>app/runtime-errors/runtime-effect-client.jsx</code>, then
+            Fast Refresh lets browser runtime errors fire while the overlay
+            stays hidden.
           </p>
         </section>
         <Link className="backLink" href="/">
@@ -21,12 +24,13 @@ export default function RuntimeErrorsPage() {
 
       <section className="panelGrid">
         <RuntimeErrorClient />
+        <RuntimeEffectClient />
 
         <aside className="panel">
           <h3>Runtime route</h3>
           <p>
-            This page exists to show how runtime failures differ from compiler
-            errors: HMR still reports a clean build.
+            This page covers render, scheduled, and useEffect runtime failures.
+            HMR still reports a clean build for each case.
           </p>
         </aside>
       </section>

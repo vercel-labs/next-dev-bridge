@@ -20,16 +20,13 @@ export default function PreviewHomePage() {
           <p>Rewrites a small module into syntax and export errors.</p>
         </Link>
 
-        <Link className="card cardWarm" href="/runtime-effect">
-          <span className="kicker">Preview route</span>
-          <h2>Runtime Effect</h2>
-          <p>Starts clean, then a useEffect throws a runtime error.</p>
-        </Link>
-
         <Link className="card cardWide" href="/runtime-errors">
           <span className="kicker">Preview route</span>
           <h2>Runtime Errors</h2>
-          <p>Schedules multiple uncaught client runtime errors.</p>
+          <p>
+            Schedules multiple uncaught client runtime errors and useEffect
+            failures.
+          </p>
         </Link>
       </section>
     </main>

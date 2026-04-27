@@ -1,4 +1,4 @@
-export const runtimeMode = 'ok'
+export const runtimeMode = 'multi'
 
 export const runtimeNote =
-  'The runtime route is healthy. Apply runtime:multi while this page is open to trigger multiple browser runtime errors.'
+  'This scenario schedules two uncaught browser runtime errors from the client component.'

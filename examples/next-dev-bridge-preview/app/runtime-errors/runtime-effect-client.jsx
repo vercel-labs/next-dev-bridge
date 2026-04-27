@@ -25,7 +25,7 @@ export function RuntimeEffectClient() {
         </div>
         <div className="meterRow">
           <strong>Runtime source</strong>
-          <code>app/runtime-effect/runtime-effect-client.jsx</code>
+          <code>app/runtime-errors/runtime-effect-client.jsx</code>
         </div>
       </div>
     </div>

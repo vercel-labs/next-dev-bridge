@@ -5,11 +5,6 @@ import { CircularLoading } from 'respinner'
 
 const PREVIEW_ROUTES = [
   { path: '/build-errors', label: 'Build errors', scenario: 'build:syntax' },
-  {
-    path: '/runtime-effect',
-    label: 'Runtime effect',
-    scenario: 'runtime-effect:error',
-  },
   { path: '/runtime-errors', label: 'Runtime errors', scenario: 'runtime:multi' },
 ]
 const ERROR_OVERLAY_POSITIONS = [
