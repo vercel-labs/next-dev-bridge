@@ -31,8 +31,6 @@ const connection = connect(
     console.log(event.type, state.phase)
   }
 )
-
-connection.stop()
 ```
 
 `next` can be a URL string or an object:
@@ -64,13 +62,23 @@ connection.stop()
 connection.on('event', listener)
 ```
 
+Call `connection.stop()` when the owning process is shutting down or no longer
+needs the observer:
+
+```ts
+process.once('SIGINT', () => {
+  connection.stop()
+  process.exit(130)
+})
+```
+
 ## observeNextDev
 
 ```ts
 const observer = observeNextDev(listener, options)
 ```
 
-`observeNextDev()` is the preferred browser API. It wraps the Next HMR websocket, installs browser runtime error listeners, and emits normalized build/runtime events. When `sourceMap: true` is enabled, runtime errors include decoded frames when Next.js can resolve them.
+`observeNextDev()` is the preferred browser API. It wraps the Next HMR websocket, installs browser runtime error listeners, and emits normalized build/runtime events. Runtime errors include decoded frames when Next.js can resolve them.
 
 ```ts
 import { observeNextDev } from 'nexto/client'
@@ -94,20 +102,22 @@ const observer = observeNextDev(
       },
       '*'
     )
-  },
-  {
-    sourceMap: true,
   }
 )
+```
 
-observer.stop()
+Call `observer.stop()` when the host UI tears down the preview:
+
+```ts
+window.addEventListener('pagehide', () => {
+  observer.stop()
+})
 ```
 
 For iframe runtimes that rewrite websocket URLs, pass `rewriteWebSocketURL` and let nexto process the rewritten socket messages:
 
 ```ts
 observeNextDev(listener, {
-  sourceMap: true,
   rewriteWebSocketURL(url) {
     return rewriteToSandboxWebSocket(url)
   },
@@ -154,7 +164,6 @@ export function installNextoFrameObserver(options: FrameObserverOptions = {}) {
     },
     {
       rewriteWebSocketURL: options.rewriteWebSocketURL,
-      sourceMap: true,
     }
   )
 }
@@ -215,9 +224,6 @@ const runtime = observeRuntimeErrors(
       },
       '*'
     )
-  },
-  {
-    sourceMap: true,
   }
 )
 
@@ -233,7 +239,6 @@ For v0-style iframe injection where you need a plain script instead of a React c
 import { createRuntimeErrorObserverScript } from 'nexto/client'
 
 const script = createRuntimeErrorObserverScript({
-  sourceMap: true,
   resetOnRefresh: true,
   targetOrigin: 'https://your-parent-app.test',
 })
@@ -241,8 +246,8 @@ const script = createRuntimeErrorObserverScript({
 
 The script posts `nexto:runtime`, `nexto:runtime-ready`, and listens for `nexto:runtime-reset`. With `resetOnRefresh` enabled, it clears captured runtime errors after a successful iframe-side HMR refresh settles, matching Next's overlay behavior more closely than clearing from a parent-side build event.
 
-When `sourceMap` is enabled, nexto sends the captured stack frames to Next.js
-as-is and uses the decoded frames when Next can resolve them.
+nexto sends captured runtime stack frames to Next.js as-is and uses the decoded
+frames when Next can resolve them.
 
 ## Events
 

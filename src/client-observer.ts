@@ -24,7 +24,7 @@ export type NextoClientEventListener = (
 ) => void
 
 export interface ObserveNextDevOptions
-  extends Pick<RuntimeErrorObserverOptions, 'dedupe' | 'sourceMap'> {
+  extends Pick<RuntimeErrorObserverOptions, 'dedupe'> {
   now?: () => Date | number | string
   raw?: boolean
   verbose?: boolean
@@ -53,7 +53,6 @@ export function observeNextDev(
     {
       dedupe: options.dedupe,
       now: options.now,
-      sourceMap: options.sourceMap,
     }
   )
 

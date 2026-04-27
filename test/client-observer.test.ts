@@ -44,26 +44,26 @@ describe('observeNextDev', () => {
       'Error: runtime exploded',
       '    at RuntimeEffectClient.useEffect (http://localhost:3000/_next/static/chunks/app.js:14:7)',
     ].join('\n')
-
-    observeNextDev((event, state) => events.push({ event, state }), {
-      sourceMap: {
-        url: 'http://localhost:3000',
-        fetch: async () =>
-          Response.json([
-            {
-              status: 'fulfilled',
-              value: {
-                originalStackFrame: {
-                  file: 'app/runtime-effect/runtime-effect-client.jsx',
-                  line1: 14,
-                  column1: 7,
-                },
-                originalCodeFrame: '> 14 | throw new Error("runtime exploded")',
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json([
+          {
+            status: 'fulfilled',
+            value: {
+              originalStackFrame: {
+                file: 'app/runtime-effect/runtime-effect-client.jsx',
+                line1: 14,
+                column1: 7,
               },
+              originalCodeFrame: '> 14 | throw new Error("runtime exploded")',
             },
-          ]),
-      },
-    })
+          },
+        ])
+      )
+    )
+
+    observeNextDev((event, state) => events.push({ event, state }))
 
     fakeWindow.emit('error', {
       error,
@@ -129,6 +129,9 @@ function createFakeWindow() {
   const fakeWindow = {
     NativeWebSocket,
     WebSocket: NativeWebSocket as any,
+    location: {
+      href: 'http://localhost:3000/runtime-effect',
+    },
     addEventListener(type: string, listener: (event: any) => void) {
       const listeners = windowListeners.get(type) || new Set()
       listeners.add(listener)
@@ -145,6 +148,10 @@ function createFakeWindow() {
   }
 
   vi.stubGlobal('window', fakeWindow)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('', { status: 204 }))
+  )
 
   return fakeWindow
 }

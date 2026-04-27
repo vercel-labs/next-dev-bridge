@@ -11,7 +11,6 @@ const HIDE_NEXT_PORTAL = `nextjs-portal {
 
 const RUNTIME_ERROR_OBSERVER_SCRIPT = createRuntimeErrorObserverScript({
   minResetAfterErrorMs: 1000,
-  sourceMap: true,
 })
 
 export const metadata = {

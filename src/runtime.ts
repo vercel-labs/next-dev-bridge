@@ -1,7 +1,6 @@
 import {
   mapErrorStack,
   type MappedErrorStack,
-  type SourceMapOptions,
   type StackFrame,
 } from './source-map.js'
 
@@ -43,7 +42,6 @@ export type RuntimeErrorListener = (
 export interface RuntimeErrorObserverOptions {
   dedupe?: boolean
   now?: () => Date | number | string
-  sourceMap?: boolean | SourceMapOptions
 }
 
 export interface RuntimeErrorObserverScriptOptions {
@@ -54,7 +52,6 @@ export interface RuntimeErrorObserverScriptOptions {
   readyMessageType?: string
   resetOnRefresh?: boolean
   resetMessageType?: string
-  sourceMap?: boolean
   targetOrigin?: string
 }
 
@@ -87,7 +84,6 @@ export function observeRuntimeErrors(
   }
   const seen = new Set<string>()
   const shouldDedupe = options.dedupe !== false
-  const sourceMapOptions = normalizeSourceMapOptions(options.sourceMap)
   let nextId = 1
 
   async function recordError(draft: RuntimeErrorDraft) {
@@ -103,9 +99,7 @@ export function observeRuntimeErrors(
       at: timestamp(options),
     }
 
-    if (sourceMapOptions) {
-      entry.mapped = await mapErrorStack(entry, sourceMapOptions)
-    }
+    entry.mapped = await mapErrorStack(entry)
 
     state.errors = [...state.errors, entry]
     emit(
@@ -257,16 +251,6 @@ function createLocationStack(
   return `${message}\n    at <anonymous> (${filename}:${line}:${column})`
 }
 
-function normalizeSourceMapOptions(
-  sourceMap: RuntimeErrorObserverOptions['sourceMap']
-) {
-  if (!sourceMap) {
-    return null
-  }
-
-  return sourceMap === true ? {} : sourceMap
-}
-
 function timestamp(options: RuntimeErrorObserverOptions) {
   const value = options.now ? options.now() : new Date()
   if (value instanceof Date) {
@@ -330,7 +314,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const resetMessageType = options.resetMessageType || 'nexto:runtime-reset'
   const targetOrigin = options.targetOrigin || '*'
   const shouldDedupe = options.dedupe !== false
-  const shouldMap = options.sourceMap === true
   const shouldResetOnRefresh = options.resetOnRefresh !== false
   const isAppDirectory = options.isAppDirectory !== false
 
@@ -384,9 +367,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     } as RuntimeErrorInfo
     lastRuntimeErrorAt = Date.now()
 
-    if (shouldMap) {
-      entry.mapped = await mapStackBearingError(entry)
-    }
+    entry.mapped = await mapStackBearingError(entry)
 
     state.errors = [...state.errors, entry]
     post(messageType, {

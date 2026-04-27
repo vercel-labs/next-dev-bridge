@@ -18,27 +18,28 @@ describe('observeRuntimeErrors', () => {
       'Error: effect exploded',
       '    at RuntimeEffectClient.useEffect (http://localhost:3000/_next/static/chunks/app/runtime-effect.js:20:9)',
     ].join('\n')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json([
+          {
+            status: 'fulfilled',
+            value: {
+              originalStackFrame: {
+                file: 'app/runtime-effect/runtime-effect-client.jsx',
+                methodName: 'RuntimeEffectClient.useEffect',
+                line1: 12,
+                column1: 7,
+              },
+              originalCodeFrame: '> 12 | throw new Error("effect exploded")',
+            },
+          },
+        ])
+      )
+    )
 
     observeRuntimeErrors((event) => events.push(event), {
       now: () => '2026-04-27T10:00:00.000Z',
-      sourceMap: {
-        url: 'http://localhost:3000',
-        fetch: async () =>
-          Response.json([
-            {
-              status: 'fulfilled',
-              value: {
-                originalStackFrame: {
-                  file: 'app/runtime-effect/runtime-effect-client.jsx',
-                  methodName: 'RuntimeEffectClient.useEffect',
-                  line1: 12,
-                  column1: 7,
-                },
-                originalCodeFrame: '> 12 | throw new Error("effect exploded")',
-              },
-            },
-          ]),
-      },
     })
 
     fakeWindow.emit('error', {
@@ -132,7 +133,6 @@ describe('observeRuntimeErrors', () => {
   it('creates a self-contained runtime observer script', () => {
     const script = createRuntimeErrorObserverScript({
       targetOrigin: 'https://example.com',
-      sourceMap: true,
     })
 
     expect(script).toContain('addEventListener')
@@ -147,6 +147,9 @@ describe('observeRuntimeErrors', () => {
 function createFakeWindow() {
   const listeners = new Map<string, Set<(event: any) => void>>()
   const fakeWindow = {
+    location: {
+      href: 'http://localhost:3000/runtime-effect',
+    },
     addEventListener(type: string, listener: (event: any) => void) {
       const nextListeners = listeners.get(type) || new Set()
       nextListeners.add(listener)
@@ -158,6 +161,10 @@ function createFakeWindow() {
   }
 
   vi.stubGlobal('window', fakeWindow)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('', { status: 204 }))
+  )
 
   return {
     emit(type: string, event: any) {
