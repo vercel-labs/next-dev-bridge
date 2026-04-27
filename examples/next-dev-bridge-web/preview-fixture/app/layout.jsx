@@ -8,18 +8,16 @@ const HIDE_NEXT_PORTAL = `nextjs-portal {
   opacity: 0 !important;
   pointer-events: none !important;
 }`
-const WEB_ORIGIN = normalizeHttpOrigin(process.env.NEXT_DEV_BRIDGE_WEB_ORIGIN)
+const STACK_FRAME_PROXY_ENDPOINT = '/api/next-dev-bridge-stack-frames'
 const SOURCE_MAP_FRAME_ROOT = `${process.cwd()}/.next/dev/static`
 const STACK_FRAME_PROXY_SCRIPT = createStackFrameProxyScript(
-  WEB_ORIGIN,
+  STACK_FRAME_PROXY_ENDPOINT,
   SOURCE_MAP_FRAME_ROOT
 )
 
 const RUNTIME_ERROR_OBSERVER_SCRIPT = createRuntimeErrorObserverScript({
   minResetAfterErrorMs: 1000,
-  sourceMapEndpoint: WEB_ORIGIN
-    ? `${WEB_ORIGIN}/api/next-dev-bridge-stack-frames`
-    : undefined,
+  sourceMapEndpoint: STACK_FRAME_PROXY_ENDPOINT,
   sourceMapFrameRoot: SOURCE_MAP_FRAME_ROOT,
 })
 
@@ -52,30 +50,10 @@ export default function RootLayout({ children }) {
   )
 }
 
-function normalizeHttpOrigin(value) {
-  if (!value) {
+function createStackFrameProxyScript(endpoint, frameRoot) {
+  if (!endpoint) {
     return ''
   }
-
-  const origin = String(value).trim()
-  if (!origin) {
-    return ''
-  }
-
-  try {
-    return new URL(/^https?:\/\//.test(origin) ? origin : `https://${origin}`)
-      .origin
-  } catch {
-    return ''
-  }
-}
-
-function createStackFrameProxyScript(webOrigin, frameRoot) {
-  if (!webOrigin) {
-    return ''
-  }
-
-  const endpoint = `${webOrigin}/api/next-dev-bridge-stack-frames`
 
   return `;(function (endpoint, frameRoot) {
   var guard = '__NEXT_DEV_BRIDGE_STACK_FRAME_PROXY__'
