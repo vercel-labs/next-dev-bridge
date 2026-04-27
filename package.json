@@ -1,6 +1,6 @@
 {
   "name": "next-dev-bridge",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Bridge a running Next.js dev server to normalized build and runtime state events.",
   "type": "module",
   "main": "./dist/index.js",
