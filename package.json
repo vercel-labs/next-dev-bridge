@@ -1,10 +1,9 @@
 {
   "name": "nexto",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Watch a running Next.js dev server and observe normalized build state events.",
   "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "exports": {
@@ -31,11 +30,13 @@
   "packageManager": "bun@1.1.30",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
     "watch": "node dist/cli.js watch http://localhost:3000 --verbose",
     "example:web": "bun run build && bun examples/nexto-web/run.cjs",
     "scenario": "bun test/next-app-scenarios.mjs",
     "test:app": "bun run build && bun --cwd test/next-app ../../node_modules/.bin/next dev -p 3000",
     "prepack": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run clean && npm run build",
     "test:unit": "vitest run test",
     "test": "bun test/run-tests.mjs"
   },
