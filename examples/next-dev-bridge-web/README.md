@@ -34,19 +34,25 @@ style into Next's internal compiler-error HTML before the iframe receives it.
 ## Vercel + Sandbox
 
 To deploy the viewer app on Vercel while still running the preview app with
-`next dev`, create a Vercel project with:
+`next dev`, create a Vercel project from the repository root:
 
 ```text
-Root Directory: examples/next-dev-bridge-web
+Root Directory: repo root (leave empty in Vercel)
 Framework Preset: Next.js
-Build Command: default
-Output Directory: default
+Install Command: bun install && bun run build && bun install --cwd examples/next-dev-bridge-web
+Build Command: bun run --cwd examples/next-dev-bridge-web build
+Output Directory: examples/next-dev-bridge-web/.next
 ```
 
-The example includes a `vercel.json` install command that installs and builds
-the library root before installing the web app. That is required because the web
-app depends on `next-dev-bridge` through `file:../..`, and Bun needs the
-library's `dist/` output to exist while it installs that file dependency.
+The repository root includes a `vercel.json` with those settings. The project
+must use the repository root as its Vercel Root Directory because the web app
+depends on `next-dev-bridge` through `file:../..`. If the Root Directory is
+`examples/next-dev-bridge-web`, Vercel will not allow the build to read
+`../..`, and Bun cannot install the local package.
+
+The install command installs the library dependencies, builds the library
+`dist/` output, and then installs the web app so Bun can copy the local
+`next-dev-bridge` package into the web app's `node_modules`.
 
 No extra environment variable is required for the default Vercel deployment.
 When `VERCEL` is defined, the viewer API routes use Sandbox mode automatically.

@@ -1,3 +1,0 @@
-{
-  "installCommand": "cd ../.. && bun install && bun run build && cd examples/next-dev-bridge-web && bun install"
-}
