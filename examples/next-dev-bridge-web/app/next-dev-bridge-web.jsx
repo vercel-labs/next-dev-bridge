@@ -1132,7 +1132,7 @@ function isBusyStatus(status, previewLoading) {
     return true
   }
 
-  return /^(Starting|Writing|Applying|Resetting|Sandbox observer|Sandbox expired)/.test(
+  return /^(Starting|Writing|Applying|Resetting|Sandbox observer starting|Sandbox expired)/.test(
     status || ''
   )
 }

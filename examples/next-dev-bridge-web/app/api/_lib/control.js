@@ -32,7 +32,7 @@ const PROBE_DEFAULT_ATTEMPTS = Number(
   process.env.NEXT_DEV_BRIDGE_PROBE_DEFAULT_ATTEMPTS || 4
 )
 const FIXTURE_VERSION =
-  '2026-04-27-preview-owned-stack-frame-proxy'
+  '2026-04-27-preview-stack-frame-internal-origin'
 const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
 const SESSION_COOKIE = 'next-dev-bridge-sandbox'
 const COOKIE_MAX_AGE_SECONDS = Math.max(
