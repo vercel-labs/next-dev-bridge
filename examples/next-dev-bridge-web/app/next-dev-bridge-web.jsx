@@ -230,6 +230,24 @@ export function NextDevBridgeWeb() {
       }
     })
 
+    source.addEventListener('sandbox-observer-ready', (message) => {
+      const payload = JSON.parse(message.data)
+      setApplyStatus(`Sandbox observer ready - ${payload.target}`)
+    })
+
+    source.addEventListener('sandbox-observer', (message) => {
+      const payload = JSON.parse(message.data)
+      setApplyStatus(`Sandbox observer starting - ${payload.target}`)
+    })
+
+    source.addEventListener('local-observer', () => {
+      setApplyStatus('Ready')
+    })
+
+    source.addEventListener('error', () => {
+      setApplyStatus('HMR event stream disconnected')
+    })
+
     return () => {
       source.close()
     }
@@ -418,6 +436,7 @@ export function NextDevBridgeWeb() {
     if (payload.preview) {
       applyPreviewPayload(payload.preview)
     }
+    reloadSandboxPreview(payload.preview)
     setApplyStatus(`Applied ${selectedScenario || editPath}`)
   }
 
@@ -450,10 +469,19 @@ export function NextDevBridgeWeb() {
     if (scenario?.route && name !== 'reset') {
       setPreviewPath(scenario.route)
     }
+    if (name !== 'reset') {
+      reloadSandboxPreview(payload.preview)
+    }
     clearVisibleErrors(name === 'reset')
     setApplyStatus(
       name === 'reset' ? 'Reset written' : `Applied ${name}`
     )
+  }
+
+  function reloadSandboxPreview(preview) {
+    if ((preview?.mode || previewMode) === 'sandbox') {
+      setPreviewVersion((value) => value + 1)
+    }
   }
 
   function clearVisibleErrors(clearFeed = false) {
