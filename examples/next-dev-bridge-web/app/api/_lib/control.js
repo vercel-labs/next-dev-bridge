@@ -19,6 +19,8 @@ const SANDBOX_TIMEOUT_MS = Number(
   process.env.NEXT_DEV_BRIDGE_SANDBOX_TIMEOUT_MS || 60 * 60 * 1000
 )
 const SANDBOX_VCPUS = Number(process.env.NEXT_DEV_BRIDGE_SANDBOX_VCPUS || 2)
+const FIXTURE_VERSION = '2026-04-27-allowed-dev-origins'
+const FIXTURE_VERSION_FILE = '.next-dev-bridge-fixture-version'
 const SESSION_COOKIE = 'next-dev-bridge-sandbox'
 const COOKIE_MAX_AGE_SECONDS = Math.max(
   60,
@@ -251,8 +253,10 @@ async function createSandboxSession() {
 }
 
 async function ensureSandboxSession(sandbox) {
-  await ensureSandboxPrepared(sandbox)
-  const devCommandId = await ensurePreviewDevServer(sandbox)
+  const fixtureUpdated = await ensureSandboxPrepared(sandbox)
+  const devCommandId = await ensurePreviewDevServer(sandbox, {
+    forceRestart: fixtureUpdated,
+  })
   const previewOrigin = sandbox.domain(SANDBOX_PORT)
 
   activeSession = {
@@ -269,19 +273,25 @@ async function ensureSandboxSession(sandbox) {
 }
 
 async function ensureSandboxPrepared(sandbox) {
+  let fixtureUpdated = false
   const fixtureCheck = await sandbox.runCommand({
     cmd: 'sh',
     args: [
       '-lc',
       `test -f ${shellQuote(
         `${SANDBOX_PREVIEW_ROOT}/package.json`
-      )} && test -f ${shellQuote(`${SANDBOX_PREVIEW_ROOT}/scenarios.cjs`)}`,
+      )} && test -f ${shellQuote(
+        `${SANDBOX_PREVIEW_ROOT}/scenarios.cjs`
+      )} && test "$(cat ${shellQuote(
+        `${SANDBOX_PREVIEW_ROOT}/${FIXTURE_VERSION_FILE}`
+      )} 2>/dev/null)" = ${shellQuote(FIXTURE_VERSION)}`,
     ],
     cwd: SANDBOX_ROOT,
   })
 
   if (fixtureCheck.exitCode !== 0) {
     await writePreviewFixtureToSandbox(sandbox)
+    fixtureUpdated = true
   }
 
   const check = await sandbox.runCommand({
@@ -291,7 +301,14 @@ async function ensureSandboxPrepared(sandbox) {
   })
 
   if (check.exitCode === 0) {
-    return
+    if (fixtureUpdated) {
+      await runCheckedCommand(sandbox, 'reset preview fixture', {
+        cmd: 'node',
+        args: ['scenarios.cjs', 'reset'],
+        cwd: SANDBOX_PREVIEW_ROOT,
+      })
+    }
+    return fixtureUpdated
   }
 
   await runCheckedCommand(sandbox, 'install dependencies', {
@@ -304,21 +321,28 @@ async function ensureSandboxPrepared(sandbox) {
     args: ['scenarios.cjs', 'reset'],
     cwd: SANDBOX_PREVIEW_ROOT,
   })
+  return true
 }
 
-async function ensurePreviewDevServer(sandbox) {
-  if (await isSandboxPortOpen(sandbox)) {
+async function ensurePreviewDevServer(sandbox, options = {}) {
+  if (options.forceRestart) {
+    await stopSandboxPreviewDevServer(sandbox)
+  }
+
+  if (!options.forceRestart && (await isSandboxPortOpen(sandbox))) {
     return activeSession?.sandboxId === sandbox.sandboxId
       ? activeSession.devCommandId
       : null
   }
 
+  const previewOrigin = sandbox.domain(SANDBOX_PORT)
   const command = await sandbox.runCommand({
     cmd: `${SANDBOX_PREVIEW_ROOT}/node_modules/.bin/next`,
     args: ['dev', '-p', String(SANDBOX_PORT), '-H', '0.0.0.0'],
     cwd: SANDBOX_PREVIEW_ROOT,
     detached: true,
     env: {
+      NEXT_DEV_BRIDGE_PREVIEW_ORIGIN: previewOrigin,
       NEXT_DEV_BRIDGE_WEB_ORIGIN:
         process.env.NEXT_DEV_BRIDGE_WEB_ORIGIN || process.env.VERCEL_URL || '',
       NEXT_TELEMETRY_DISABLED: '1',
@@ -326,9 +350,21 @@ async function ensurePreviewDevServer(sandbox) {
   })
 
   await waitForSandboxPort(sandbox)
-  await waitForPreviewOrigin(sandbox.domain(SANDBOX_PORT))
+  await waitForPreviewOrigin(previewOrigin)
 
   return command.cmdId
+}
+
+async function stopSandboxPreviewDevServer(sandbox) {
+  await sandbox.runCommand({
+    cmd: 'sh',
+    args: [
+      '-lc',
+      `pkill -f ${shellQuote(`[n]ext dev -p ${SANDBOX_PORT}`)} || true`,
+    ],
+    cwd: SANDBOX_PREVIEW_ROOT,
+  })
+  await delay(500)
 }
 
 async function isSandboxPortOpen(sandbox) {
@@ -428,6 +464,11 @@ async function writePreviewFixtureToSandbox(sandbox) {
     path: `${SANDBOX_PREVIEW_ROOT}/${file.relativePath}`,
     content: file.content,
   }))
+
+  files.push({
+    path: `${SANDBOX_PREVIEW_ROOT}/${FIXTURE_VERSION_FILE}`,
+    content: `${FIXTURE_VERSION}\n`,
+  })
 
   await sandbox.writeFiles(files)
 }
