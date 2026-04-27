@@ -796,7 +796,12 @@ export function NextDevBridgeWeb() {
             />
           ) : (
             <div className="previewStarting">
-              <LoadingStatus busy={isStatusBusy} text={applyStatus} />
+              <LoadingStatus
+                busy={isStatusBusy}
+                className="previewStartingStatus"
+                size={18}
+                text={applyStatus}
+              />
             </div>
           )}
           {showErrorsOverPreview ? (
@@ -1098,14 +1103,21 @@ function joinLogParts(parts) {
   return parts.filter(Boolean).join(' ')
 }
 
-function LoadingStatus({ busy, text }) {
+function LoadingStatus({ busy, className = '', size = 14, text }) {
   return (
-    <span className={busy ? 'loadingStatus loadingStatusBusy' : 'loadingStatus'}>
+    <span
+      className={[
+        busy ? 'loadingStatus loadingStatusBusy' : 'loadingStatus',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {busy ? (
         <CircularLoading
           aria-hidden="true"
           className="statusSpinner"
-          size={14}
+          size={size}
           stroke="currentColor"
           strokeWidth={3}
         />

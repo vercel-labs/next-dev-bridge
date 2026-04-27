@@ -429,6 +429,10 @@ h3 {
   vertical-align: middle;
 }
 
+.loadingStatusBusy {
+  color: var(--accent);
+}
+
 .actionStatus .loadingStatus {
   justify-content: flex-end;
 }
@@ -441,7 +445,12 @@ h3 {
 }
 
 .statusSpinner {
-  flex: 0 0 14px;
+  flex: 0 0 auto;
+}
+
+.previewStartingStatus {
+  justify-content: center;
+  gap: 10px;
 }
 
 .previewWorkbench {
