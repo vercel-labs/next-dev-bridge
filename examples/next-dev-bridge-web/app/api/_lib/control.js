@@ -65,10 +65,17 @@ export async function getPreviewSession(request, options = {}) {
     }
   }
 
-  const requestedSandboxId = getRequestedSandboxId(request)
+  const requestedSandboxId = options.ignoreRequested
+    ? ''
+    : getRequestedSandboxId(request)
 
   if (options.forceNew && requestedSandboxId) {
     await stopSandboxById(requestedSandboxId)
+  }
+
+  if (options.forceNew) {
+    clearActiveSession()
+    return createSandboxSession()
   }
 
   if (!options.forceNew) {

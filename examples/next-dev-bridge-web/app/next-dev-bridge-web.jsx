@@ -90,17 +90,13 @@ export function NextDevBridgeWeb() {
     const params = new URLSearchParams(window.location.search)
     const control = params.get('control') || DEFAULT_CONTROL_ORIGIN
     const preview = params.get('preview')
-    const sandbox =
-      params.get('sandbox') || window.localStorage.getItem(SANDBOX_STORAGE_KEY) || ''
+    const sandbox = params.get('sandbox') || ''
 
     setControlOrigin(control)
+    window.localStorage.removeItem(SANDBOX_STORAGE_KEY)
 
     async function initializePreview() {
       try {
-        if (sandbox) {
-          setSandboxId(sandbox)
-        }
-
         if (preview) {
           setPreviewOrigin(preview)
           setPreviewLoading(false)
@@ -109,7 +105,10 @@ export function NextDevBridgeWeb() {
           return
         }
 
-        const payload = await fetchPreviewSession(control, sandbox)
+        const payload = await fetchPreviewSession(control, sandbox, {
+          ignore: !sandbox,
+          restart: !sandbox,
+        })
         if (cancelled) {
           return
         }
@@ -369,7 +368,7 @@ export function NextDevBridgeWeb() {
 
     if (preview.sandboxId) {
       setSandboxId(preview.sandboxId)
-      window.localStorage.setItem(SANDBOX_STORAGE_KEY, preview.sandboxId)
+      window.localStorage.removeItem(SANDBOX_STORAGE_KEY)
     }
   }
 
@@ -391,6 +390,9 @@ export function NextDevBridgeWeb() {
 
     if (options.restart) {
       params.restart = '1'
+    }
+    if (options.ignore) {
+      params.ignore = '1'
     }
 
     const response = await fetch(
