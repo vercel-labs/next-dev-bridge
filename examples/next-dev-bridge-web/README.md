@@ -43,6 +43,11 @@ Build Command: default
 Output Directory: default
 ```
 
+The example includes a `vercel.json` install command that installs and builds
+the library root before installing the web app. That is required because the web
+app depends on `next-dev-bridge` through `file:../..`, and Bun needs the
+library's `dist/` output to exist while it installs that file dependency.
+
 No extra environment variable is required for the default Vercel deployment.
 When `VERCEL` is defined, the viewer API routes use Sandbox mode automatically.
 
