@@ -50,9 +50,7 @@ export interface RuntimeErrorObserverScriptOptions {
   dedupe?: boolean
   isAppDirectory?: boolean
   messageType?: string
-  minResetAfterErrorMs?: number
   readyMessageType?: string
-  resetOnRefresh?: boolean
   resetMessageType?: string
   sourceMapEndpoint?: string
   sourceMapFrameRoot?: string
@@ -329,12 +327,10 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const existing = (window as any)[symbol]
   const options = rawOptions || {}
   const messageType = options.messageType || 'next-dev-bridge:runtime'
-  const minResetAfterErrorMs = options.minResetAfterErrorMs ?? 1000
   const readyMessageType = options.readyMessageType || 'next-dev-bridge:runtime-ready'
   const resetMessageType = options.resetMessageType || 'next-dev-bridge:runtime-reset'
   const targetOrigin = options.targetOrigin || '*'
   const shouldDedupe = options.dedupe !== false
-  const shouldResetOnRefresh = options.resetOnRefresh !== false
   const isAppDirectory = options.isAppDirectory !== false
   const sourceMapEndpoint =
     typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
@@ -358,8 +354,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const windowId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const state = { errors: [] as RuntimeErrorInfo[] }
   const seen = new Set<string>()
-  let resetAfterRefreshTimer: ReturnType<typeof setTimeout> | null = null
-  let lastRuntimeErrorAt = 0
 
   function post(type: string, payload: Record<string, unknown>) {
     if (window.parent === window) {
@@ -393,7 +387,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       id: nextId++,
       at: new Date().toISOString(),
     } as RuntimeErrorInfo
-    lastRuntimeErrorAt = Date.now()
 
     state.errors = [...state.errors, entry]
     post(messageType, {
@@ -450,29 +443,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     })
   }
 
-  function scheduleResetAfterRefresh() {
-    if (
-      !shouldResetOnRefresh ||
-      state.errors.length === 0 ||
-      Date.now() - lastRuntimeErrorAt < minResetAfterErrorMs
-    ) {
-      return
-    }
-
-    if (resetAfterRefreshTimer) {
-      clearTimeout(resetAfterRefreshTimer)
-    }
-
-    resetAfterRefreshTimer = setTimeout(() => {
-      resetAfterRefreshTimer = null
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          reset()
-        })
-      })
-    }, 0)
-  }
-
   function onError(event: ErrorEvent) {
     void recordError(fromErrorEvent(event))
   }
@@ -496,17 +466,12 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onUnhandledRejection)
     window.removeEventListener('message', onMessage)
-    if (resetAfterRefreshTimer) {
-      clearTimeout(resetAfterRefreshTimer)
-      resetAfterRefreshTimer = null
-    }
     delete (window as any)[symbol]
   }
 
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)
   window.addEventListener('message', onMessage)
-  patchWebSocketForRefresh()
 
   ;(window as any)[symbol] = {
     windowId,
@@ -826,56 +791,4 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     }
   }
 
-  function patchWebSocketForRefresh() {
-    if (!shouldResetOnRefresh || !(window as any).WebSocket) {
-      return
-    }
-
-    const nativeWebSocket = window.WebSocket
-    if ((nativeWebSocket as any).__nextDevBridgeRuntimePatched) {
-      return
-    }
-
-    function NextDevBridgeRuntimeWebSocket(
-      this: WebSocket,
-      url: string | URL,
-      protocols?: string | string[]
-    ) {
-      const socket =
-        protocols === undefined
-          ? new nativeWebSocket(url)
-          : new nativeWebSocket(url, protocols)
-      const urlText = String(url)
-      const isNextHmr =
-        urlText.includes('/_next/webpack-hmr') ||
-        urlText.includes('/_next/turbopack-hmr') ||
-        urlText.includes('__webpack_hmr')
-
-      if (isNextHmr) {
-        socket.addEventListener('message', (event) => {
-          if (typeof event.data !== 'string') {
-            return
-          }
-
-          try {
-            const payload = JSON.parse(event.data)
-            const isSettled = payload?.type === 'built'
-            const hasErrors =
-              Array.isArray(payload?.errors) && payload.errors.length > 0
-
-            if (isSettled && !hasErrors) {
-              scheduleResetAfterRefresh()
-            }
-          } catch {}
-        })
-      }
-
-      return socket
-    }
-
-    NextDevBridgeRuntimeWebSocket.prototype = nativeWebSocket.prototype
-    Object.assign(NextDevBridgeRuntimeWebSocket, nativeWebSocket)
-    ;(NextDevBridgeRuntimeWebSocket as any).__nextDevBridgeRuntimePatched = true
-    window.WebSocket = NextDevBridgeRuntimeWebSocket as any
-  }
 }

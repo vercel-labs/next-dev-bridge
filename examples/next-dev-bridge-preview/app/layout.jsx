@@ -16,7 +16,6 @@ const STACK_FRAME_PROXY_SCRIPT = createStackFrameProxyScript(
 )
 
 const RUNTIME_ERROR_OBSERVER_SCRIPT = createRuntimeErrorObserverScript({
-  minResetAfterErrorMs: 1000,
   sourceMapEndpoint: STACK_FRAME_PROXY_ENDPOINT,
   sourceMapFrameRoot: SOURCE_MAP_FRAME_ROOT,
 })

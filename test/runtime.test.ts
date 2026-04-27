@@ -189,7 +189,7 @@ describe('observeRuntimeErrors', () => {
     })
 
     expect(script).toContain('addEventListener')
-    expect(script).toContain('WebSocket')
+    expect(script).not.toContain('WebSocket')
     expect(script).toContain('next-dev-bridge:runtime')
     expect(script).toContain('next-dev-bridge:runtime-reset')
     expect(script).toContain('https://example.com')
