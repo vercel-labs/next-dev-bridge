@@ -5,7 +5,10 @@ import {
   type StackFrame,
 } from './source-map.js'
 
-export type RuntimeErrorSource = 'error' | 'unhandledrejection'
+export type RuntimeErrorSource =
+  | 'error'
+  | 'unhandledrejection'
+  | 'reported-error'
 
 export interface RuntimeErrorInfo {
   id: number
@@ -122,6 +125,16 @@ export function observeRuntimeErrors(
     void recordError(fromUnhandledRejection(event))
   }
 
+  const originalReportError = window.reportError
+  let reportErrorBridge: ((error: unknown) => void) | null = null
+  if (typeof originalReportError === 'function') {
+    reportErrorBridge = function (error: unknown) {
+      void recordError(fromReportedError(error))
+      return originalReportError.call(window, error)
+    }
+    window.reportError = reportErrorBridge
+  }
+
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)
 
@@ -129,6 +142,9 @@ export function observeRuntimeErrors(
     stop() {
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
+      if (reportErrorBridge && window.reportError === reportErrorBridge) {
+        window.reportError = originalReportError
+      }
     },
     reset() {
       state.errors = []
@@ -209,6 +225,17 @@ function fromUnhandledRejection(
   }
 }
 
+function fromReportedError(error: unknown): RuntimeErrorDraft {
+  const shape = toErrorShape(error, 'Reported runtime error')
+
+  return {
+    source: 'reported-error',
+    name: shape.name,
+    message: shape.message,
+    stack: shape.stack,
+  }
+}
+
 function toErrorShape(value: unknown, fallbackMessage: string) {
   if (value instanceof Error) {
     return {
@@ -273,7 +300,9 @@ function timestamp(options: RuntimeErrorObserverOptions) {
 }
 
 function getRuntimeErrorSignature(error: RuntimeErrorDraft) {
-  return [error.source, error.name, error.message, error.stack].join('\n')
+  const source = error.source === 'reported-error' ? 'error' : error.source
+
+  return [source, error.name, error.message, error.stack].join('\n')
 }
 
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {
@@ -370,12 +399,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   }
 
   async function recordError(draft: RuntimeErrorDraft) {
-    const signature = [
-      draft.source,
-      draft.name,
-      draft.message,
-      draft.stack,
-    ].join('\n')
+    const signature = getRuntimeErrorSignature(draft)
 
     if (shouldDedupe && seen.has(signature)) {
       return
@@ -451,6 +475,16 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     void recordError(fromUnhandledRejection(event))
   }
 
+  const originalReportError = window.reportError
+  let reportErrorBridge: ((error: unknown) => void) | null = null
+  if (typeof originalReportError === 'function') {
+    reportErrorBridge = function (error: unknown) {
+      void recordError(fromReportedError(error))
+      return originalReportError.call(window, error)
+    }
+    window.reportError = reportErrorBridge
+  }
+
   function onMessage(event: MessageEvent) {
     const payload = event.data
     if (!payload || typeof payload !== 'object') {
@@ -466,6 +500,9 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onUnhandledRejection)
     window.removeEventListener('message', onMessage)
+    if (reportErrorBridge && window.reportError === reportErrorBridge) {
+      window.reportError = originalReportError
+    }
     delete (window as any)[symbol]
   }
 
@@ -517,6 +554,17 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       name: error.name,
       message: error.message,
       stack: error.stack,
+    }
+  }
+
+  function fromReportedError(error: unknown): RuntimeErrorDraft {
+    const shape = toErrorShape(error, 'Reported runtime error')
+
+    return {
+      source: 'reported-error',
+      name: shape.name,
+      message: shape.message,
+      stack: shape.stack,
     }
   }
 
@@ -781,6 +829,12 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     }
 
     return `${message}\n    at <anonymous> (${filename}:${line}:${column})`
+  }
+
+  function getRuntimeErrorSignature(error: RuntimeErrorDraft) {
+    const source = error.source === 'reported-error' ? 'error' : error.source
+
+    return [source, error.name, error.message, error.stack].join('\n')
   }
 
   function safeStringify(value: unknown) {

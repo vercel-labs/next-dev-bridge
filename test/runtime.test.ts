@@ -157,6 +157,44 @@ describe('observeRuntimeErrors', () => {
     })
   })
 
+  it('captures window.reportError and dedupes the dispatched error event', async () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const originalReportError = vi.fn((error: unknown) => {
+      fakeWindow.emit('error', {
+        error,
+        message: error instanceof Error ? error.message : String(error),
+      })
+    })
+    ;(window as any).reportError = originalReportError
+
+    const observer = observeRuntimeErrors((event) => events.push(event), {
+      now: () => '2026-04-27T10:00:00.000Z',
+    })
+
+    const error = new Error('boundary exploded')
+    error.stack = 'Error: boundary exploded\n    at Page (app/page.js:2:1)'
+    ;(window as any).reportError(error)
+    await waitFor(() => events.length === 1)
+
+    expect(originalReportError).toHaveBeenCalledWith(error)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      type: 'runtime:error',
+      error: {
+        id: 1,
+        source: 'reported-error',
+        name: 'Error',
+        message: 'boundary exploded',
+        stack: error.stack,
+        at: '2026-04-27T10:00:00.000Z',
+      },
+    })
+
+    observer.stop()
+    expect((window as any).reportError).toBe(originalReportError)
+  })
+
   it('can reset and stop listening', async () => {
     const fakeWindow = createFakeWindow()
     const events: any[] = []
@@ -189,6 +227,8 @@ describe('observeRuntimeErrors', () => {
     })
 
     expect(script).toContain('addEventListener')
+    expect(script).toContain('reportError')
+    expect(script).toContain('reported-error')
     expect(script).not.toContain('WebSocket')
     expect(script).toContain('next-dev-bridge:runtime')
     expect(script).toContain('next-dev-bridge:runtime-reset')

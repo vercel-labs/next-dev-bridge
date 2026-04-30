@@ -177,6 +177,12 @@ runtime.stop()
 
 Runtime errors are not carried by HMR build messages. In a Next preview iframe, prefer `observeNextDev()` when you need both build and runtime events.
 
+`observeRuntimeErrors()` captures `window.error`, `unhandledrejection`, and
+`window.reportError()` calls. `reportError()` captures errors that Next.js
+re-reports from implicit development boundaries, including the dev overlay and
+default global error boundary path, and emits them with
+`source: 'reported-error'`.
+
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 
 ```ts
