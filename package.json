@@ -3,6 +3,10 @@
   "version": "0.2.0",
   "description": "Bridge a running Next.js dev server to normalized build and runtime state events.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vercel-labs/nexto.git"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
