@@ -97,13 +97,13 @@ function requireValue(argv, index, flag) {
 }
 
 function printHelp() {
-  process.stdout.write(`next-dev-bridge
+  process.stdout.write(`connect-next
 
 Observe a running Next.js dev server and print normalized build/runtime state events.
 
 Usage:
-  next-dev-bridge [url] [options]
-  next-dev-bridge observe [url] [options]
+  connect-next [url] [options]
+  connect-next observe [url] [options]
   node dist/cli.js observe [url] [options]
   bun run observe -- [url] [options]
 

@@ -207,18 +207,18 @@ Start your Next.js app first:
 next dev
 ```
 
-Then observe it with `next-dev-bridge`:
+Then observe it with `connect-next`:
 
 ```sh
-next-dev-bridge http://localhost:3000
+connect-next http://localhost:3000
 ```
 
 Useful options:
 
 ```sh
-next-dev-bridge 3000
-next-dev-bridge observe http://localhost:3000 --verbose
-next-dev-bridge http://localhost:3000 --no-reconnect
+connect-next 3000
+connect-next observe http://localhost:3000 --verbose
+connect-next http://localhost:3000 --no-reconnect
 ```
 
 The CLI attaches to the running dev server. It does not start Next.js for you.

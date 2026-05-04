@@ -13,18 +13,16 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",
-      "import": "./dist/client.js",
       "default": "./dist/client.js"
     },
     "./package.json": "./package.json"
   },
   "bin": {
-    "next-dev-bridge": "./dist/cli.js"
+    "connect-next": "./dist/cli.js"
   },
   "files": [
     "dist",
