@@ -478,6 +478,7 @@ function cleanupCompilerMessage(message: string, verbose: boolean) {
   })
 
   message = lines.join('\n')
+  message = normalizeNextIssueFilePathLines(message)
   message = message.replace(
     /SyntaxError\s+\((\d+):(\d+)\)\s*(.+?)\n/g,
     'Syntax error: $3 ($1:$2)\n'
@@ -538,11 +539,64 @@ function cleanupCompilerMessage(message: string, verbose: boolean) {
 }
 
 function isLikelySyntaxError(message: string) {
-  return stripAnsi(message).includes('Syntax error:')
+  const cleanMessage = stripAnsi(message)
+  return (
+    cleanMessage.includes('Syntax error:') ||
+    cleanMessage.includes('Parsing ecmascript source code failed') ||
+    cleanMessage.includes('Parsing CSS source code failed') ||
+    cleanMessage.includes('Caused by:\n    Syntax Error')
+  )
 }
 
 function stripAnsi(value: string) {
   return String(value).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
+function normalizeNextIssueFilePathLines(message: string) {
+  return message
+    .split('\n')
+    .map((line) => normalizeNextIssueFilePathLine(line))
+    .join('\n')
+}
+
+function normalizeNextIssueFilePathLine(line: string) {
+  const match = /^(\s*)(?:⨯\s+)?(.+?)\s*$/.exec(line)
+  if (!match) {
+    return line
+  }
+
+  const [, indentation, value] = match
+  if (!isLikelyNextIssueFilePath(value)) {
+    return line
+  }
+
+  return `${indentation}${normalizeNextIssueFilePath(value)}`
+}
+
+function normalizeNextIssueFilePath(value: string) {
+  const location = /(?::\d+(?::\d+)?)$/.exec(value)?.[0] || ''
+  const filePath = location ? value.slice(0, -location.length) : value
+
+  return `${formatNextIssueFilePath(filePath)}${location}`
+}
+
+function formatNextIssueFilePath(filePath: string) {
+  return filePath
+    .replace('[project]/', './')
+    .replaceAll('/./', '/')
+    .replace('\\\\?\\', '')
+}
+
+function isLikelyNextIssueFilePath(value: string) {
+  const filePath = value.replace(/(?::\d+(?::\d+)?)$/, '')
+  return (
+    filePath.startsWith('[project]/') ||
+    filePath.startsWith('./') ||
+    filePath.startsWith('../') ||
+    filePath.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/.test(filePath) ||
+    filePath.startsWith('file://')
+  )
 }
 
 function cloneState(state: NextDevBridgeState): NextDevBridgeState {

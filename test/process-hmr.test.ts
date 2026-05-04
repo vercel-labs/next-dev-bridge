@@ -75,6 +75,79 @@ describe('processHMR', () => {
     })
   })
 
+  it('normalizes Turbopack path-first build errors', () => {
+    const handleHMR = processHMR()
+    const result = handleHMR({
+      type: 'built',
+      hash: 'turbopack-error',
+      errors: [
+        {
+          message: [
+            '⨯ [project]/app/build-errors/page.jsx:2:1',
+            "Export buildErrorMessage doesn't exist in target module",
+            '  1 | import Link from "next/link"',
+            '> 2 | import { buildErrorMessage } from "./subject"',
+            '    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^',
+            '',
+            'Generated code of loaders [example-loader.js] transform:',
+            '[project]/app/build-errors/page.jsx:3:4',
+            '  3 | export default function Page() {}',
+          ].join('\n'),
+        },
+      ],
+      warnings: [],
+    })
+
+    expect(result.state.errors[0]).toMatchInlineSnapshot(`
+      "./app/build-errors/page.jsx:2:1
+      Export buildErrorMessage doesn't exist in target module
+        1 | import Link from "next/link"
+      > 2 | import { buildErrorMessage } from "./subject"
+          | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+      Generated code of loaders [example-loader.js] transform:
+      ./app/build-errors/page.jsx:3:4
+        3 | export default function Page() {}"
+    `)
+  })
+
+  it('keeps Turbopack parse errors ahead of non-syntax errors', () => {
+    const handleHMR = processHMR()
+    const result = handleHMR({
+      type: 'built',
+      hash: 'syntax-error',
+      errors: [
+        {
+          message: [
+            '[project]/app/page.jsx:5:1',
+            'Expression expected',
+            '  3 | export function Page() {',
+            '> 5 | }',
+            '    | ^',
+            '',
+            'Parsing ecmascript source code failed',
+          ].join('\n'),
+        },
+        {
+          message: 'Unrelated follow-up error',
+        },
+      ],
+      warnings: [{ message: 'Unrelated warning' }],
+    })
+
+    expect(result.state.errors).toHaveLength(1)
+    expect(result.state.errors[0]).toMatchInlineSnapshot(`
+      "./app/page.jsx:5:1
+      Expression expected
+        3 | export function Page() {
+      > 5 | }
+          | ^
+
+      Parsing ecmascript source code failed"
+    `)
+    expect(result.state.warnings).toEqual([])
+  })
+
   it('returns build:ready for a clean initial sync', () => {
     const handleHMR = processHMR()
     const result = handleHMR({
