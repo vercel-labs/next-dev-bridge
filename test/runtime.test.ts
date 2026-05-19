@@ -57,6 +57,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'error',
+        severity: 'recoverable',
         name: 'Error',
         message: 'effect exploded',
         at: '2026-04-27T10:00:00.000Z',
@@ -152,6 +153,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'unhandledrejection',
+        severity: 'recoverable',
         message: 'promise exploded',
       },
     })
@@ -184,6 +186,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'reported-error',
+        severity: 'fatal',
         name: 'Error',
         message: 'boundary exploded',
         stack: error.stack,

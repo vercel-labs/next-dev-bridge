@@ -183,6 +183,14 @@ re-reports from implicit development boundaries, including the dev overlay and
 default global error boundary path, and emits them with
 `source: 'reported-error'`.
 
+Each error also carries a `severity` field derived from the source. In React
+19+, `onUncaughtError` routes through `window.reportError`, so
+`source: 'reported-error'` maps to `severity: 'fatal'` — the tree was
+unmounted and the user is looking at the Next.js error route. Errors from
+`error` and `unhandledrejection` events leave the React tree mounted and are
+emitted as `severity: 'recoverable'`. Use this to distinguish "user is stuck
+on the error page" from "something logged but the app still works."
+
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 
 ```ts

@@ -29,6 +29,7 @@ export type {
   RuntimeErrorObserver,
   RuntimeErrorObserverOptions,
   RuntimeErrorObserverScriptOptions,
+  RuntimeErrorSeverity,
   RuntimeErrorSource,
   RuntimeErrorState,
 } from './runtime.js'
