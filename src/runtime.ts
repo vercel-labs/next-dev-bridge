@@ -10,9 +10,12 @@ export type RuntimeErrorSource =
   | 'unhandledrejection'
   | 'reported-error'
 
+export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
+
 export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
+  severity: RuntimeErrorSeverity
   name: string
   message: string
   stack: string
@@ -101,6 +104,7 @@ export function observeRuntimeErrors(
     const entry: RuntimeErrorInfo = {
       ...draft,
       id: nextId++,
+      severity: getRuntimeErrorSeverity(draft.source),
       at: timestamp(options),
     }
 
@@ -305,6 +309,12 @@ function getRuntimeErrorSignature(error: RuntimeErrorDraft) {
   return [source, error.name, error.message, error.stack].join('\n')
 }
 
+function getRuntimeErrorSeverity(
+  source: RuntimeErrorSource
+): RuntimeErrorSeverity {
+  return source === 'reported-error' ? 'fatal' : 'recoverable'
+}
+
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {
   return {
     errors: cloneRuntimeErrors(state.errors),
@@ -409,6 +419,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     const entry = {
       ...draft,
       id: nextId++,
+      severity: getRuntimeErrorSeverity(draft.source),
       at: new Date().toISOString(),
     } as RuntimeErrorInfo
 
@@ -835,6 +846,12 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     const source = error.source === 'reported-error' ? 'error' : error.source
 
     return [source, error.name, error.message, error.stack].join('\n')
+  }
+
+  function getRuntimeErrorSeverity(
+    source: RuntimeErrorSource
+  ): RuntimeErrorSeverity {
+    return source === 'reported-error' ? 'fatal' : 'recoverable'
   }
 
   function safeStringify(value: unknown) {
