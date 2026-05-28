@@ -49,7 +49,7 @@ export type RuntimeErrorListener = (
 export interface RuntimeErrorObserverOptions {
   dedupe?: boolean
   now?: () => Date | number | string
-  sourceMap?: SourceMapOptions
+  sourceMap?: SourceMapOptions | false
 }
 
 export interface RuntimeErrorObserverScriptOptions {
@@ -108,7 +108,12 @@ export function observeRuntimeErrors(
       at: timestamp(options),
     }
 
-    entry.mapped = await mapErrorStack(entry, getRuntimeSourceMapOptions(entry))
+    if (options.sourceMap) {
+      entry.mapped = await mapErrorStack(
+        entry,
+        getRuntimeSourceMapOptions(entry, options.sourceMap)
+      )
+    }
 
     state.errors = [...state.errors, entry]
     emit(
@@ -167,11 +172,14 @@ export function observeRuntimeErrors(
     }
   }
 
-  function getRuntimeSourceMapOptions(error: RuntimeErrorInfo): SourceMapOptions {
+  function getRuntimeSourceMapOptions(
+    error: RuntimeErrorInfo,
+    sourceMap: SourceMapOptions
+  ): SourceMapOptions {
     return {
-      ...options.sourceMap,
-      fallbackFile: options.sourceMap?.fallbackFile || error.filename,
-      sourceOrigin: options.sourceMap?.sourceOrigin || getWindowLocationOrigin(),
+      ...sourceMap,
+      fallbackFile: sourceMap.fallbackFile || error.filename,
+      sourceOrigin: sourceMap.sourceOrigin || getWindowLocationOrigin(),
     }
   }
 }
@@ -374,7 +382,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const sourceMapEndpoint =
     typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
       ? options.sourceMapEndpoint
-      : '/__nextjs_original-stack-frames'
+      : ''
   const sourceMapFrameRoot =
     typeof options.sourceMapFrameRoot === 'string' && options.sourceMapFrameRoot
       ? options.sourceMapFrameRoot.replace(/\/+$/, '')
@@ -435,28 +443,30 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       windowId,
     })
 
-    void mapStackBearingError(entry)
-      .then((mapped) => {
-        if (!state.errors.some((error) => error.id === entry.id)) {
-          return
-        }
+    if (sourceMapEndpoint) {
+      void mapStackBearingError(entry)
+        .then((mapped) => {
+          if (!state.errors.some((error) => error.id === entry.id)) {
+            return
+          }
 
-        entry.mapped = mapped
-        state.errors = state.errors.map((error) =>
-          error.id === entry.id ? entry : error
-        )
-        post(messageType, {
-          event: {
-            type: 'runtime:error',
-            error: entry,
-            errors: state.errors,
-          },
-          state,
-          href: window.location.href,
-          windowId,
+          entry.mapped = mapped
+          state.errors = state.errors.map((error) =>
+            error.id === entry.id ? entry : error
+          )
+          post(messageType, {
+            event: {
+              type: 'runtime:error',
+              error: entry,
+              errors: state.errors,
+            },
+            state,
+            href: window.location.href,
+            windowId,
+          })
         })
-      })
-      .catch(() => {})
+        .catch(() => {})
+    }
   }
 
   function reset() {
@@ -629,6 +639,24 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   }
 
   async function mapStackFrames(frames: StackFrame[]) {
+    const frameVariants = getStackFrameVariants(frames)
+    let lastMappedFrames: unknown[] | null = null
+
+    for (const variantFrames of frameVariants) {
+      const result = await requestMappedStackFrames(variantFrames)
+      if (hasMeaningfulMappedFrame(result.mappedFrames)) {
+        return alignMappedFrames(frames, result.mappedFrames)
+      }
+      lastMappedFrames = result.mappedFrames
+      if (!result.shouldTryNextVariant) {
+        break
+      }
+    }
+
+    return lastMappedFrames ?? rejectFrames(frames, 'No stack frames to map.')
+  }
+
+  async function requestMappedStackFrames(frames: StackFrame[]) {
     try {
       const isCrossOriginSourceMapEndpoint = isCrossOriginURL(sourceMapEndpoint)
       const requestInit: RequestInit = {
@@ -657,34 +685,56 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
 
       if (!response.ok || response.status === 204) {
         const reason = await response.text().catch(() => '')
-        return frames.map(() => ({
-          status: 'rejected',
-          reason:
-            reason || 'No original stack frame response from Next dev server.',
-        }))
+        return {
+          mappedFrames: rejectFrames(
+            frames,
+            reason || 'No original stack frame response from Next dev server.'
+          ),
+          shouldTryNextVariant: false,
+        }
       }
 
       const mappedFrames = await response.json()
       if (!Array.isArray(mappedFrames)) {
-        return frames.map(() => ({
-          status: 'rejected',
-          reason: 'Invalid original stack frame response from Next dev server.',
-        }))
+        return {
+          mappedFrames: rejectFrames(
+            frames,
+            'Invalid original stack frame response from Next dev server.'
+          ),
+          shouldTryNextVariant: false,
+        }
       }
 
-      return frames.map(
-        (_frame, index) =>
-          mappedFrames[index] || {
-            status: 'rejected',
-            reason: 'No original stack frame response for frame.',
-          }
-      )
+      return {
+        mappedFrames: alignMappedFrames(frames, mappedFrames),
+        shouldTryNextVariant: true,
+      }
     } catch (error) {
-      return frames.map(() => ({
-        status: 'rejected',
-        reason: error instanceof Error ? error.message : String(error),
-      }))
+      return {
+        mappedFrames: rejectFrames(
+          frames,
+          error instanceof Error ? error.message : String(error)
+        ),
+        shouldTryNextVariant: false,
+      }
     }
+  }
+
+  function alignMappedFrames(frames: StackFrame[], mappedFrames: any[]) {
+    return frames.map(
+      (_frame, index) =>
+        mappedFrames[index] || {
+          status: 'rejected',
+          reason: 'No original stack frame response for frame.',
+        }
+    )
+  }
+
+  function rejectFrames(frames: StackFrame[], reason: string) {
+    return frames.map(() => ({
+      status: 'rejected',
+      reason,
+    }))
   }
 
   function normalizeStackFrames(
@@ -695,6 +745,58 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       ...frame,
       file: normalizeStackFrameFile(frame.file, fallbackFile),
     }))
+  }
+
+  function getStackFrameVariants(frames: StackFrame[]) {
+    const variants: StackFrame[][] = []
+    const seen = new Set<string>()
+    addStackFrameVariant(variants, seen, frames)
+
+    for (const transformFile of [
+      getNextDevGeneratedFrameFile,
+      getTurbopackFrameFile,
+      getAbsoluteFrameFile,
+    ]) {
+      const variant = transformStackFrameFiles(frames, transformFile)
+      if (variant) {
+        addStackFrameVariant(variants, seen, variant)
+      }
+    }
+
+    return variants
+  }
+
+  function addStackFrameVariant(
+    variants: StackFrame[][],
+    seen: Set<string>,
+    frames: StackFrame[]
+  ) {
+    const key = JSON.stringify(frames.map((frame) => frame.file))
+    if (seen.has(key)) return
+
+    seen.add(key)
+    variants.push(frames)
+  }
+
+  function transformStackFrameFiles(
+    frames: StackFrame[],
+    transformFile: (file: string) => string | null
+  ) {
+    let changed = false
+    const nextFrames = frames.map((frame) => {
+      if (typeof frame.file !== 'string') return frame
+
+      const nextFile = transformFile(frame.file)
+      if (!nextFile || nextFile === frame.file) return frame
+
+      changed = true
+      return {
+        ...frame,
+        file: nextFile,
+      }
+    })
+
+    return changed ? nextFrames : null
   }
 
   function normalizeStackFrameFile(file: unknown, fallbackFile?: string) {
@@ -741,6 +843,51 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     )}`
   }
 
+  function getNextDevGeneratedFrameFile(file: string) {
+    const nextAssetPath = getNextAssetPathFromFrameFile(file)
+    if (!nextAssetPath) return null
+
+    return `.next/dev/static/${nextAssetPath.replace(
+      /^\/_next\/static\/?/,
+      ''
+    )}`
+  }
+
+  function getTurbopackFrameFile(file: string) {
+    const nextAssetPath = getNextAssetPathFromFrameFile(file)
+    if (!nextAssetPath) return null
+
+    return nextAssetPath.replace(/^\/+/, '')
+  }
+
+  function getAbsoluteFrameFile(file: string) {
+    const nextAssetPath = getNextAssetPathFromFrameFile(file)
+    if (!nextAssetPath) return null
+
+    try {
+      return new URL(nextAssetPath, window.location.origin).href
+    } catch {
+      return null
+    }
+  }
+
+  function getNextAssetPathFromFrameFile(file: string) {
+    const pathname = getStackFramePathname(file)
+    if (pathname.startsWith('/_next/static/')) {
+      return pathname
+    }
+
+    const nextDevStaticPath = getPathAfterSegment(
+      pathname,
+      '/.next/dev/static/'
+    )
+    if (nextDevStaticPath) {
+      return `/_next/static/${nextDevStaticPath}`
+    }
+
+    return ''
+  }
+
   function getNextAssetPath(file: string) {
     if (file.startsWith('/_next/')) {
       return file
@@ -756,6 +903,24 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     } catch {
       return ''
     }
+  }
+
+  function getStackFramePathname(file: string) {
+    try {
+      return new URL(file).pathname
+    } catch {}
+
+    if (file.startsWith('/')) {
+      return file
+    }
+
+    return `/${file}`
+  }
+
+  function getPathAfterSegment(pathname: string, segment: string) {
+    const index = pathname.indexOf(segment)
+    if (index === -1) return ''
+    return pathname.slice(index + segment.length)
   }
 
   function isAbsoluteOrVirtualFrameFile(file: string) {
@@ -775,6 +940,46 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
 
   function getBasename(file: string) {
     return file.split('?')[0].split(/[\\/]/).pop() || file
+  }
+
+  function hasMeaningfulMappedFrame(mappedFrames: unknown[]) {
+    for (const frame of mappedFrames) {
+      const originalStackFrame = getOriginalStackFrame(frame)
+      if (!originalStackFrame || originalStackFrame.ignored === true) continue
+
+      const file = getNonEmptyString(originalStackFrame.file)
+      if (!file || isGeneratedNextFrameFile(file)) continue
+
+      return true
+    }
+
+    return false
+  }
+
+  function getOriginalStackFrame(frame: unknown) {
+    if (!isRecord(frame)) return null
+    if (frame.status !== 'fulfilled') return null
+    if (!isRecord(frame.value)) return null
+    if (!isRecord(frame.value.originalStackFrame)) return null
+
+    return frame.value.originalStackFrame
+  }
+
+  function isGeneratedNextFrameFile(file: string) {
+    const pathname = getStackFramePathname(file)
+    return (
+      /\/(?:_next\/static|\.next\/dev\/static)\/chunks\//.test(pathname) ||
+      pathname.includes('/next/dist/compiled/')
+    )
+  }
+
+  function getNonEmptyString(value: unknown) {
+    if (typeof value !== 'string') return ''
+    return value.trim()
+  }
+
+  function isRecord(value: unknown): value is Record<string, any> {
+    return typeof value === 'object' && value !== null
   }
 
   function isCrossOriginURL(value: string) {

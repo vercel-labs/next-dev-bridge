@@ -168,6 +168,11 @@ const runtime = observeRuntimeErrors(
       },
       '*'
     )
+  },
+  {
+    sourceMap: {
+      endpoint: '/__nextjs_original-stack-frames',
+    },
   }
 )
 
@@ -183,6 +188,10 @@ re-reports from implicit development boundaries, including the dev overlay and
 default global error boundary path, and emits them with
 `source: 'reported-error'`.
 
+Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
+Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
+runtime errors without making source-map requests.
+
 Each error also carries a `severity` field derived from the source. In React
 19+, `onUncaughtError` routes through `window.reportError`, so
 `source: 'reported-error'` maps to `severity: 'fatal'` — the tree was
@@ -197,15 +206,14 @@ For v0-style iframe injection where you need a plain script instead of a React c
 import { createRuntimeErrorObserverScript } from 'next-dev-bridge/client'
 
 const script = createRuntimeErrorObserverScript({
-  resetOnRefresh: true,
+  sourceMapEndpoint: '/__nextjs_original-stack-frames',
   targetOrigin: 'https://your-parent-app.test',
 })
 ```
 
-The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. With `resetOnRefresh` enabled, it clears captured runtime errors after a successful iframe-side HMR refresh settles, matching Next's overlay behavior more closely than clearing from a parent-side build event.
+The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. Omit `sourceMapEndpoint` to skip source-map requests from the self-contained script.
 
-next-dev-bridge sends captured runtime stack frames to Next.js as-is and uses the decoded
-frames when Next can resolve them.
+When source mapping is enabled, next-dev-bridge sends captured runtime stack frames to Next.js and uses the decoded frames when Next can resolve them. If Next returns generated chunk frames, next-dev-bridge tries alternate generated frame file shapes before falling back to the last response.
 
 ## CLI
 
