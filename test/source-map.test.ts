@@ -105,7 +105,7 @@ describe('Next dev source-map helpers', () => {
   })
 
   it('uses the runtime event filename when the stack only has a basename', async () => {
-    let requestBody: any
+    const requestBodies: any[] = []
 
     const mapped = await mapErrorStack(
       {
@@ -119,7 +119,7 @@ describe('Next dev source-map helpers', () => {
         fallbackFile:
           'https://preview.example.test/_next/static/chunks/_0l5b1-n._.js',
         fetch: async (_url, init) => {
-          requestBody = JSON.parse(String(init?.body))
+          requestBodies.push(JSON.parse(String(init?.body)))
 
           return Response.json([])
         },
@@ -127,13 +127,13 @@ describe('Next dev source-map helpers', () => {
     )
 
     expect(mapped.frames[0].file).toBe('/_next/static/chunks/_0l5b1-n._.js')
-    expect(requestBody.frames[0].file).toBe(
+    expect(requestBodies[0].frames[0].file).toBe(
       '/_next/static/chunks/_0l5b1-n._.js'
     )
   })
 
   it('can send dev-server filesystem chunk paths to Next source mapping', async () => {
-    let requestBody: any
+    const requestBodies: any[] = []
 
     await mapStackFrames(
       [
@@ -148,16 +148,101 @@ describe('Next dev source-map helpers', () => {
       {
         frameRoot: '/repo/.next/dev/static',
         fetch: async (_url, init) => {
-          requestBody = JSON.parse(String(init?.body))
+          requestBodies.push(JSON.parse(String(init?.body)))
 
           return Response.json([])
         },
       }
     )
 
-    expect(requestBody.frames[0].file).toBe(
+    expect(requestBodies[0].frames[0].file).toBe(
       '/repo/.next/dev/static/chunks/_0l5b1-n._.js'
     )
+  })
+
+  it('tries alternate frame file variants when Next maps to compiled chunks', async () => {
+    const requestedFrames: unknown[] = []
+    const mappedFrames = await mapStackFrames(
+      [
+        {
+          file: 'http://localhost:3000/_next/static/chunks/_0l5b1-n._.js',
+          methodName: 'handleClick',
+          arguments: [],
+          line1: 26,
+          column1: 27,
+        },
+      ],
+      {
+        url: 'http://localhost:3000',
+        fetch: async (_url, init) => {
+          const body = JSON.parse(String(init?.body))
+          requestedFrames.push(body.frames)
+
+          if (requestedFrames.length === 1) {
+            return Response.json([
+              {
+                status: 'fulfilled',
+                value: {
+                  originalStackFrame: {
+                    file: '.next/dev/static/chunks/_0l5b1-n._.js',
+                    methodName: 'handleClick',
+                    line1: 26,
+                    column1: 27,
+                  },
+                  originalCodeFrame: null,
+                },
+              },
+            ])
+          }
+
+          return Response.json([
+            {
+              status: 'fulfilled',
+              value: {
+                originalStackFrame: {
+                  file: 'app/page.tsx',
+                  methodName: 'handleClick',
+                  line1: 12,
+                  column1: 9,
+                },
+                originalCodeFrame: '> 12 | throw new Error("boom")',
+              },
+            },
+          ])
+        },
+      }
+    )
+
+    expect(requestedFrames).toEqual([
+      [
+        {
+          file: '/_next/static/chunks/_0l5b1-n._.js',
+          methodName: 'handleClick',
+          arguments: [],
+          line1: 26,
+          column1: 27,
+        },
+      ],
+      [
+        {
+          file: '.next/dev/static/chunks/_0l5b1-n._.js',
+          methodName: 'handleClick',
+          arguments: [],
+          line1: 26,
+          column1: 27,
+        },
+      ],
+    ])
+    expect(mappedFrames[0]).toMatchObject({
+      status: 'fulfilled',
+      value: {
+        originalStackFrame: {
+          file: 'app/page.tsx',
+          line1: 12,
+          column1: 9,
+        },
+      },
+    })
   })
 
   it('maps an error-like object with a stack', async () => {

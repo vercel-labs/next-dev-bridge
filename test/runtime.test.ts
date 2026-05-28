@@ -40,6 +40,7 @@ describe('observeRuntimeErrors', () => {
 
     observeRuntimeErrors((event) => events.push(event), {
       now: () => '2026-04-27T10:00:00.000Z',
+      sourceMap: {},
     })
 
     fakeWindow.emit('error', {
@@ -87,6 +88,33 @@ describe('observeRuntimeErrors', () => {
     )
   })
 
+  it('does not source map runtime errors unless source mapping is configured', async () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const fetchMock = vi.fn(async () => Response.json([]))
+    vi.stubGlobal('fetch', fetchMock)
+    const error = new Error('plain runtime error')
+    error.stack =
+      'Error: plain runtime error\n' +
+      '    at Page (http://localhost:3000/_next/static/chunks/app/page.js:20:9)'
+
+    observeRuntimeErrors((event) => events.push(event), {
+      now: () => '2026-04-27T10:00:00.000Z',
+    })
+
+    fakeWindow.emit('error', {
+      error,
+      message: error.message,
+      filename: 'http://localhost:3000/_next/static/chunks/app/page.js',
+      lineno: 20,
+      colno: 9,
+    })
+    await waitFor(() => events.length === 1)
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(events[0].error.mapped).toBeUndefined()
+  })
+
   it('passes configured source-map options to runtime stack mapping', async () => {
     const fakeWindow = createFakeWindow()
     const events: any[] = []
@@ -95,7 +123,7 @@ describe('observeRuntimeErrors', () => {
       'Error: effect exploded',
       '    at RuntimeEffectClient.useEffect.timer (_0l5b1-n._.js:26:27)',
     ].join('\n')
-    let requestBody: any
+    const requestBodies: any[] = []
     let requestInit: RequestInit | undefined
 
     observeRuntimeErrors((event) => events.push(event), {
@@ -103,7 +131,7 @@ describe('observeRuntimeErrors', () => {
         endpoint: 'https://web.example.test/api/next-dev-bridge-stack-frames',
         fetch: async (_url, init) => {
           requestInit = init
-          requestBody = JSON.parse(String(init?.body))
+          requestBodies.push(JSON.parse(String(init?.body)))
 
           return Response.json([])
         },
@@ -120,10 +148,10 @@ describe('observeRuntimeErrors', () => {
     })
     await waitFor(() => events.length === 1)
 
-    expect(requestBody).toMatchObject({
+    expect(requestBodies[0]).toMatchObject({
       sourceOrigin: 'http://localhost:3000',
     })
-    expect(requestBody.frames[0].file).toBe(
+    expect(requestBodies[0].frames[0].file).toBe(
       '/repo/.next/dev/static/chunks/_0l5b1-n._.js'
     )
     expect(requestInit?.headers).toBeUndefined()
@@ -239,6 +267,12 @@ describe('observeRuntimeErrors', () => {
     expect(script).toContain('https://example.com/api/stack-frames')
     expect(script).toContain('/repo/.next/dev/static')
     expect(script).not.toContain('</script>')
+  })
+
+  it('does not source map from the self-contained script without an endpoint', () => {
+    const script = createRuntimeErrorObserverScript()
+
+    expect(script).not.toContain('/__nextjs_original-stack-frames')
   })
 })
 

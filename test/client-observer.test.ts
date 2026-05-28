@@ -63,7 +63,9 @@ describe('observeNextDev', () => {
       )
     )
 
-    observeNextDev((event, state) => events.push({ event, state }))
+    observeNextDev((event, state) => events.push({ event, state }), {
+      sourceMap: {},
+    })
 
     fakeWindow.emit('error', {
       error,

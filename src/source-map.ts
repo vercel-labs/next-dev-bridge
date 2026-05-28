@@ -50,6 +50,11 @@ export interface MappedErrorStack {
   mappedFrames: SourceMappedStackFrame[]
 }
 
+type StackFrameRequestResult = {
+  mappedFrames: SourceMappedStackFrame[]
+  shouldTryNextVariant: boolean
+}
+
 export async function mapErrorStack(
   error: unknown,
   options: SourceMapOptions = {}
@@ -71,8 +76,29 @@ export async function mapStackFrames(
   frames: StackFrame[],
   options: SourceMapOptions = {}
 ): Promise<SourceMappedStackFrame[]> {
+  const normalizedFrames = normalizeStackFrames(frames, options)
+  const frameVariants = getStackFrameVariants(normalizedFrames, options)
+  let lastMappedFrames: SourceMappedStackFrame[] | null = null
+
+  for (const variantFrames of frameVariants) {
+    const result = await requestMappedStackFrames(variantFrames, options)
+    if (hasMeaningfulMappedFrame(result.mappedFrames)) {
+      return alignMappedFrames(frames, result.mappedFrames)
+    }
+    lastMappedFrames = result.mappedFrames
+    if (!result.shouldTryNextVariant) {
+      break
+    }
+  }
+
+  return lastMappedFrames ?? rejectFrames(frames, 'No stack frames to map.')
+}
+
+async function requestMappedStackFrames(
+  frames: StackFrame[],
+  options: SourceMapOptions
+): Promise<StackFrameRequestResult> {
   try {
-    const normalizedFrames = normalizeStackFrames(frames, options)
     const requestFetch = options.fetch || fetch
     const endpoint = getOriginalStackFramesURL(options)
     const isCrossOriginEndpoint = isCrossOriginURL(endpoint)
@@ -81,7 +107,7 @@ export async function mapStackFrames(
       ...options.requestInit,
       method: 'POST',
       body: JSON.stringify({
-        frames: normalizedFrames,
+        frames,
         isServer: Boolean(options.isServer),
         isEdgeServer: Boolean(options.isEdgeServer),
         isAppDirectory: options.isAppDirectory !== false,
@@ -101,34 +127,59 @@ export async function mapStackFrames(
 
     if (!response.ok || response.status === 204) {
       const reason = await response.text().catch(() => '')
-      return normalizedFrames.map(() => ({
-        status: 'rejected',
-        reason:
-          reason || 'No original stack frame response from Next dev server.',
-      }))
+      return {
+        mappedFrames: rejectFrames(
+          frames,
+          reason || 'No original stack frame response from Next dev server.'
+        ),
+        shouldTryNextVariant: false,
+      }
     }
 
     const mappedFrames = await response.json()
     if (!Array.isArray(mappedFrames)) {
-      return frames.map(() => ({
-        status: 'rejected',
-        reason: 'Invalid original stack frame response from Next dev server.',
-      }))
+      return {
+        mappedFrames: rejectFrames(
+          frames,
+          'Invalid original stack frame response from Next dev server.'
+        ),
+        shouldTryNextVariant: false,
+      }
     }
 
-    return frames.map(
-      (_frame, index) =>
-        mappedFrames[index] || {
-          status: 'rejected',
-          reason: 'No original stack frame response for frame.',
-        }
-    )
+    return {
+      mappedFrames: alignMappedFrames(frames, mappedFrames),
+      shouldTryNextVariant: true,
+    }
   } catch (error) {
-    return frames.map(() => ({
-      status: 'rejected',
-      reason: error instanceof Error ? error.message : String(error),
-    }))
+    return {
+      mappedFrames: rejectFrames(
+        frames,
+        error instanceof Error ? error.message : String(error)
+      ),
+      shouldTryNextVariant: false,
+    }
   }
+}
+
+function alignMappedFrames(
+  frames: StackFrame[],
+  mappedFrames: SourceMappedStackFrame[]
+) {
+  return frames.map(
+    (_frame, index) =>
+      mappedFrames[index] || {
+        status: 'rejected',
+        reason: 'No original stack frame response for frame.',
+      }
+  )
+}
+
+function rejectFrames(frames: StackFrame[], reason: string) {
+  return frames.map(() => ({
+    status: 'rejected' as const,
+    reason,
+  }))
 }
 
 export function parseStack(stack: string): StackFrame[] {
@@ -177,6 +228,61 @@ export function normalizeStackFrames(
     ...frame,
     file: normalizeStackFrameFile(frame.file, options),
   }))
+}
+
+function getStackFrameVariants(
+  frames: StackFrame[],
+  options: Pick<SourceMapOptions, 'sourceOrigin'>
+) {
+  const variants: StackFrame[][] = []
+  const seen = new Set<string>()
+  addStackFrameVariant(variants, seen, frames)
+
+  for (const transformFile of [
+    getNextDevGeneratedFrameFile,
+    getTurbopackFrameFile,
+    (file: string) => getAbsoluteFrameFile(file, options.sourceOrigin),
+  ]) {
+    const variant = transformStackFrameFiles(frames, transformFile)
+    if (variant) {
+      addStackFrameVariant(variants, seen, variant)
+    }
+  }
+
+  return variants
+}
+
+function addStackFrameVariant(
+  variants: StackFrame[][],
+  seen: Set<string>,
+  frames: StackFrame[]
+) {
+  const key = JSON.stringify(frames.map((frame) => frame.file))
+  if (seen.has(key)) return
+
+  seen.add(key)
+  variants.push(frames)
+}
+
+function transformStackFrameFiles(
+  frames: StackFrame[],
+  transformFile: (file: string) => string | null
+) {
+  let changed = false
+  const nextFrames = frames.map((frame) => {
+    if (typeof frame.file !== 'string') return frame
+
+    const nextFile = transformFile(frame.file)
+    if (!nextFile || nextFile === frame.file) return frame
+
+    changed = true
+    return {
+      ...frame,
+      file: nextFile,
+    }
+  })
+
+  return changed ? nextFrames : null
 }
 
 function normalizeStackFrameFile(
@@ -230,6 +336,50 @@ function formatNextAssetFrameFile(nextAssetPath: string, frameRoot?: string | UR
   return `${root}/${relativeAssetPath}`
 }
 
+function getNextDevGeneratedFrameFile(file: string) {
+  const nextAssetPath = getNextAssetPathFromFrameFile(file)
+  if (!nextAssetPath) return null
+
+  return `.next/dev/static/${nextAssetPath.replace(/^\/_next\/static\/?/, '')}`
+}
+
+function getTurbopackFrameFile(file: string) {
+  const nextAssetPath = getNextAssetPathFromFrameFile(file)
+  if (!nextAssetPath) return null
+
+  return nextAssetPath.replace(/^\/+/, '')
+}
+
+function getAbsoluteFrameFile(
+  file: string,
+  sourceOrigin?: string | URL
+) {
+  if (!sourceOrigin) return null
+
+  const nextAssetPath = getNextAssetPathFromFrameFile(file)
+  if (!nextAssetPath) return null
+
+  try {
+    return new URL(nextAssetPath, sourceOrigin).href
+  } catch {
+    return null
+  }
+}
+
+function getNextAssetPathFromFrameFile(file: string) {
+  const pathname = getStackFramePathname(file)
+  if (pathname.startsWith('/_next/static/')) {
+    return pathname
+  }
+
+  const nextDevStaticPath = getPathAfterSegment(pathname, '/.next/dev/static/')
+  if (nextDevStaticPath) {
+    return `/_next/static/${nextDevStaticPath}`
+  }
+
+  return ''
+}
+
 function getNextAssetPath(file: string) {
   if (file.startsWith('/_next/')) {
     return file
@@ -245,6 +395,64 @@ function getNextAssetPath(file: string) {
   } catch {
     return ''
   }
+}
+
+function getStackFramePathname(file: string) {
+  try {
+    return new URL(file).pathname
+  } catch {}
+
+  if (file.startsWith('/')) {
+    return file
+  }
+
+  return `/${file}`
+}
+
+function getPathAfterSegment(pathname: string, segment: string) {
+  const index = pathname.indexOf(segment)
+  if (index === -1) return ''
+  return pathname.slice(index + segment.length)
+}
+
+function hasMeaningfulMappedFrame(mappedFrames: SourceMappedStackFrame[]) {
+  for (const frame of mappedFrames) {
+    const originalStackFrame = getOriginalStackFrame(frame)
+    if (!originalStackFrame || originalStackFrame.ignored === true) continue
+
+    const file = getNonEmptyString(originalStackFrame.file)
+    if (!file || isGeneratedNextFrameFile(file)) continue
+
+    return true
+  }
+
+  return false
+}
+
+function getOriginalStackFrame(frame: SourceMappedStackFrame) {
+  if (!isRecord(frame)) return null
+  if (frame.status !== 'fulfilled') return null
+  if (!isRecord(frame.value)) return null
+  if (!isRecord(frame.value.originalStackFrame)) return null
+
+  return frame.value.originalStackFrame
+}
+
+function isGeneratedNextFrameFile(file: string) {
+  const pathname = getStackFramePathname(file)
+  return (
+    /\/(?:_next\/static|\.next\/dev\/static)\/chunks\//.test(pathname) ||
+    pathname.includes('/next/dist/compiled/')
+  )
+}
+
+function getNonEmptyString(value: unknown) {
+  if (typeof value !== 'string') return ''
+  return value.trim()
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 function isAbsoluteOrVirtualFrameFile(file: string) {
