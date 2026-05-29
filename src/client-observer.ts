@@ -24,7 +24,7 @@ export type NextDevBridgeClientEventListener = (
 ) => void
 
 export interface ObserveNextDevOptions
-  extends Pick<RuntimeErrorObserverOptions, 'dedupe' | 'sourceMap'> {
+  extends Pick<RuntimeErrorObserverOptions, 'sourceMap'> {
   now?: () => Date | number | string
   raw?: boolean
   verbose?: boolean
@@ -51,7 +51,6 @@ export function observeNextDev(
       emit(event)
     },
     {
-      dedupe: options.dedupe,
       now: options.now,
       sourceMap: options.sourceMap,
     }

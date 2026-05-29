@@ -8,7 +8,6 @@ import {
 export type RuntimeErrorSource =
   | 'error'
   | 'unhandledrejection'
-  | 'reported-error'
 
 export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
 
@@ -47,13 +46,11 @@ export type RuntimeErrorListener = (
 ) => void
 
 export interface RuntimeErrorObserverOptions {
-  dedupe?: boolean
   now?: () => Date | number | string
   sourceMap?: SourceMapOptions | false
 }
 
 export interface RuntimeErrorObserverScriptOptions {
-  dedupe?: boolean
   isAppDirectory?: boolean
   messageType?: string
   readyMessageType?: string
@@ -90,21 +87,13 @@ export function observeRuntimeErrors(
   const state: RuntimeErrorState = {
     errors: [],
   }
-  const seen = new Set<string>()
-  const shouldDedupe = options.dedupe !== false
   let nextId = 1
 
   async function recordError(draft: RuntimeErrorDraft) {
-    const signature = getRuntimeErrorSignature(draft)
-    if (shouldDedupe && seen.has(signature)) {
-      return
-    }
-    seen.add(signature)
-
     const entry: RuntimeErrorInfo = {
       ...draft,
       id: nextId++,
-      severity: getRuntimeErrorSeverity(draft.source),
+      severity: getRuntimeErrorSeverity(),
       at: timestamp(options),
     }
 
@@ -134,16 +123,6 @@ export function observeRuntimeErrors(
     void recordError(fromUnhandledRejection(event))
   }
 
-  const originalReportError = window.reportError
-  let reportErrorBridge: ((error: unknown) => void) | null = null
-  if (typeof originalReportError === 'function') {
-    reportErrorBridge = function (error: unknown) {
-      void recordError(fromReportedError(error))
-      return originalReportError.call(window, error)
-    }
-    window.reportError = reportErrorBridge
-  }
-
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)
 
@@ -151,13 +130,9 @@ export function observeRuntimeErrors(
     stop() {
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
-      if (reportErrorBridge && window.reportError === reportErrorBridge) {
-        window.reportError = originalReportError
-      }
     },
     reset() {
       state.errors = []
-      seen.clear()
       emit({ type: 'runtime:cleared', errors: [] }, state)
       return cloneRuntimeState(state)
     },
@@ -182,6 +157,7 @@ export function observeRuntimeErrors(
       sourceOrigin: sourceMap.sourceOrigin || getWindowLocationOrigin(),
     }
   }
+
 }
 
 export function createRuntimeErrorObserverScript(
@@ -234,17 +210,6 @@ function fromUnhandledRejection(
     name: error.name,
     message: error.message,
     stack: error.stack,
-  }
-}
-
-function fromReportedError(error: unknown): RuntimeErrorDraft {
-  const shape = toErrorShape(error, 'Reported runtime error')
-
-  return {
-    source: 'reported-error',
-    name: shape.name,
-    message: shape.message,
-    stack: shape.stack,
   }
 }
 
@@ -311,16 +276,8 @@ function timestamp(options: RuntimeErrorObserverOptions) {
   return String(value)
 }
 
-function getRuntimeErrorSignature(error: RuntimeErrorDraft) {
-  const source = error.source === 'reported-error' ? 'error' : error.source
-
-  return [source, error.name, error.message, error.stack].join('\n')
-}
-
-function getRuntimeErrorSeverity(
-  source: RuntimeErrorSource
-): RuntimeErrorSeverity {
-  return source === 'reported-error' ? 'fatal' : 'recoverable'
+function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
+  return 'recoverable'
 }
 
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {
@@ -377,7 +334,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const readyMessageType = options.readyMessageType || 'next-dev-bridge:runtime-ready'
   const resetMessageType = options.resetMessageType || 'next-dev-bridge:runtime-reset'
   const targetOrigin = options.targetOrigin || '*'
-  const shouldDedupe = options.dedupe !== false
   const isAppDirectory = options.isAppDirectory !== false
   const sourceMapEndpoint =
     typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
@@ -400,7 +356,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   let nextId = 1
   const windowId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const state = { errors: [] as RuntimeErrorInfo[] }
-  const seen = new Set<string>()
 
   function post(type: string, payload: Record<string, unknown>) {
     if (window.parent === window) {
@@ -417,17 +372,10 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   }
 
   async function recordError(draft: RuntimeErrorDraft) {
-    const signature = getRuntimeErrorSignature(draft)
-
-    if (shouldDedupe && seen.has(signature)) {
-      return
-    }
-    seen.add(signature)
-
     const entry = {
       ...draft,
       id: nextId++,
-      severity: getRuntimeErrorSeverity(draft.source),
+      severity: getRuntimeErrorSeverity(),
       at: new Date().toISOString(),
     } as RuntimeErrorInfo
 
@@ -471,12 +419,10 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
 
   function reset() {
     if (state.errors.length === 0) {
-      seen.clear()
       return
     }
 
     state.errors = []
-    seen.clear()
     post(messageType, {
       event: {
         type: 'runtime:cleared',
@@ -496,16 +442,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     void recordError(fromUnhandledRejection(event))
   }
 
-  const originalReportError = window.reportError
-  let reportErrorBridge: ((error: unknown) => void) | null = null
-  if (typeof originalReportError === 'function') {
-    reportErrorBridge = function (error: unknown) {
-      void recordError(fromReportedError(error))
-      return originalReportError.call(window, error)
-    }
-    window.reportError = reportErrorBridge
-  }
-
   function onMessage(event: MessageEvent) {
     const payload = event.data
     if (!payload || typeof payload !== 'object') {
@@ -521,9 +457,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onUnhandledRejection)
     window.removeEventListener('message', onMessage)
-    if (reportErrorBridge && window.reportError === reportErrorBridge) {
-      window.reportError = originalReportError
-    }
     delete (window as any)[symbol]
   }
 
@@ -575,17 +508,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       name: error.name,
       message: error.message,
       stack: error.stack,
-    }
-  }
-
-  function fromReportedError(error: unknown): RuntimeErrorDraft {
-    const shape = toErrorShape(error, 'Reported runtime error')
-
-    return {
-      source: 'reported-error',
-      name: shape.name,
-      message: shape.message,
-      stack: shape.stack,
     }
   }
 
@@ -1047,16 +969,8 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     return `${message}\n    at <anonymous> (${filename}:${line}:${column})`
   }
 
-  function getRuntimeErrorSignature(error: RuntimeErrorDraft) {
-    const source = error.source === 'reported-error' ? 'error' : error.source
-
-    return [source, error.name, error.message, error.stack].join('\n')
-  }
-
-  function getRuntimeErrorSeverity(
-    source: RuntimeErrorSource
-  ): RuntimeErrorSeverity {
-    return source === 'reported-error' ? 'fatal' : 'recoverable'
+  function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
+    return 'recoverable'
   }
 
   function safeStringify(value: unknown) {
