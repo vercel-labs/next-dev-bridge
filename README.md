@@ -170,12 +170,16 @@ Common build events:
 
 ## Examples
 
-This repo includes a test-oriented Next.js preview app and a web shell that can
-apply edits, show the preview in an iframe, and render next-dev-bridge events.
+Runnable usage lives under [`examples/`](examples/). The repo includes a
+test-oriented Next.js preview app and a local web shell that can apply edits,
+show the preview in an iframe, and render next-dev-bridge events.
 
 ```sh
 bun run example:web
 ```
+
+The project website is a dependency-free static page in [`site/index.html`](site/index.html).
+It does not run the example or start a Next.js application.
 
 Run unit tests:
 
