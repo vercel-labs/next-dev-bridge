@@ -79,12 +79,17 @@
 
       .header-links {
         display: flex;
+        align-items: center;
         gap: 16px;
       }
 
       .header-links a {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         color: var(--muted);
         font-size: 14px;
+        line-height: 1;
         text-decoration: none;
       }
 
@@ -509,8 +514,12 @@
           <span>next-dev-bridge</span>
         </a>
         <nav class="header-links" aria-label="Project links">
-          <a href="https://www.npmjs.com/package/next-dev-bridge">npm</a>
-          <a href="https://github.com/vercel-labs/next-dev-bridge">github ↗</a>
+          <a href="https://www.npmjs.com/package/next-dev-bridge">
+            <span>npm</span><span aria-hidden="true">↗</span>
+          </a>
+          <a href="https://github.com/vercel-labs/next-dev-bridge">
+            <span>github</span><span aria-hidden="true">↗</span>
+          </a>
         </nav>
       </header>
 
