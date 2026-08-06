@@ -15,7 +15,8 @@ const TEST_APP_ROOT = path.join(__dirname, 'next-app')
 const PORT = Number(process.env.PORT || 3100)
 const HOST = '127.0.0.1'
 const DEV_URL = `http://${HOST}:${PORT}`
-const HMR_SETTLE_DELAY_MS = 1000
+const HMR_SETTLE_QUIET_MS = 1500
+const HMR_SETTLE_TIMEOUT_MS = 10000
 const NEXT_BIN = path.join(
   REPO_ROOT,
   'node_modules',
@@ -255,7 +256,7 @@ async function runBuildErrorFlow(context) {
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
   const shownEvent = await shown
   assertFormattedErrors(shownEvent, 'syntax')
-  await delay(HMR_SETTLE_DELAY_MS)
+  await waitForHmrSilence(context)
 
   logScenarioHeader('build:missing-export', [
     'replace syntax error with a valid module missing an imported export',
@@ -274,7 +275,7 @@ async function runBuildErrorFlow(context) {
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
   const updatedEvent = await updated
   assertFormattedErrors(updatedEvent, 'missing export')
-  await delay(HMR_SETTLE_DELAY_MS)
+  await waitForHmrSilence(context)
 
   logScenarioHeader('build:recover', [
     'restore the build-errors dependency',
@@ -422,6 +423,34 @@ function requestIgnoringErrors(url) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForHmrSilence(context) {
+  const startedAt = Date.now()
+  let eventIndex = context.observerEvents.length
+  let lastHmrEventAt = startedAt
+
+  while (Date.now() - startedAt < HMR_SETTLE_TIMEOUT_MS) {
+    const events = context.observerEvents.slice(eventIndex)
+    eventIndex += events.length
+
+    if (events.some(isBuildEvent)) {
+      lastHmrEventAt = Date.now()
+    }
+    if (Date.now() - lastHmrEventAt >= HMR_SETTLE_QUIET_MS) {
+      return
+    }
+
+    await delay(100)
+  }
+
+  throw new Error(
+    `HMR events did not settle within ${HMR_SETTLE_TIMEOUT_MS}ms`
+  )
+}
+
+function isBuildEvent(event) {
+  return event.type.startsWith('build:')
 }
 
 function waitForExit(child, timeoutMs) {
