@@ -4,10 +4,12 @@ import * as net from 'node:net'
 import * as tls from 'node:tls'
 
 export const DEFAULT_DEV_SERVER_URL = 'http://localhost:3000'
-export const DEFAULT_HMR_PATH = '/_next/webpack-hmr'
+export const DEFAULT_HMR_PATH = '/_next/hmr'
+export const HMR_PATHS = [DEFAULT_HMR_PATH, '/_next/webpack-hmr'] as const
 
 export interface NextHmrWebSocketOptions {
   url?: string
+  hmrPath?: string
 }
 
 export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
@@ -22,7 +24,9 @@ export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
 
   const protocol =
     base.protocol === 'https:' || base.protocol === 'wss:' ? 'wss:' : 'ws:'
-  const wsUrl = new URL(`${protocol}//${base.host}${DEFAULT_HMR_PATH}`)
+  const wsUrl = new URL(
+    `${protocol}//${base.host}${options.hmrPath || DEFAULT_HMR_PATH}`
+  )
 
   if (base.search) {
     for (const [name, value] of base.searchParams) {

@@ -9,6 +9,7 @@ import {
 } from './processor.js'
 import {
   DEFAULT_DEV_SERVER_URL,
+  HMR_PATHS,
   buildHmrUrl,
   connectWebSocket,
 } from './websocket.js'
@@ -99,6 +100,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
   private reconnectAttempt: number
   private closed: boolean
   private socket: any
+  private pendingSockets: Set<any>
   private reconnectTimer: ReturnType<typeof setTimeout> | null
 
   constructor(options: ObserverOptions = {}) {
@@ -119,6 +121,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     this.reconnectAttempt = 0
     this.closed = false
     this.socket = null
+    this.pendingSockets = new Set()
     this.reconnectTimer = null
   }
 
@@ -137,6 +140,10 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
       this.socket.close()
       this.socket = null
     }
+    for (const socket of this.pendingSockets) {
+      socket.close()
+    }
+    this.pendingSockets.clear()
   }
 
   getSnapshot() {
@@ -146,45 +153,88 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
   }
 
   private connect() {
-    const wsUrl = buildHmrUrl(this.options)
+    // Next.js 16.3 renamed the HMR endpoint. Unsupported upgrade paths may stay
+    // pending, so race both known paths and keep the first successful socket.
+    const wsUrls = HMR_PATHS.map((hmrPath) =>
+      buildHmrUrl({ ...this.options, hmrPath })
+    )
     this.connection = 'connecting'
-    this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
+    this.emitEvent({ type: 'session:connecting', url: wsUrls[0].href })
 
-    const socket = connectWebSocket(wsUrl)
-    this.socket = socket
+    let remaining = wsUrls.length
+    let lastError: unknown
 
-    socket.on('open', () => {
-      this.reconnectAttempt = 0
-      this.connection = 'connected'
-      this.emitEvent({ type: 'session:connected', url: wsUrl.href })
-    })
+    for (const wsUrl of wsUrls) {
+      const socket = connectWebSocket(wsUrl)
+      this.pendingSockets.add(socket)
 
-    socket.on('message', (message) => {
-      this.processHMR(message, (event) => this.emitEvent(event))
-    })
+      socket.on('open', () => {
+        if (this.socket || this.closed) {
+          socket.close()
+          return
+        }
 
-    socket.on('binary', (payload) => {
-      if (this.options.verbose) {
-        this.emitEvent({
-          type: 'internal:binary-message',
-          byteLength: payload.length,
-          opcode: payload[0],
-        })
-      }
-    })
+        this.socket = socket
+        this.pendingSockets.delete(socket)
+        for (const pendingSocket of this.pendingSockets) {
+          pendingSocket.close()
+        }
+        this.pendingSockets.clear()
+        this.reconnectAttempt = 0
+        this.connection = 'connected'
+        this.emitEvent({ type: 'session:connected', url: wsUrl.href })
+      })
 
-    socket.on('close', ({ code, reason } = {}) => {
-      if (this.socket === socket) {
-        this.socket = null
-      }
-      this.connection = 'disconnected'
-      this.emitEvent({ type: 'session:disconnected', code, reason })
-      this.scheduleReconnect()
-    })
+      socket.on('message', (message) => {
+        if (this.socket === socket) {
+          this.processHMR(message, (event) => this.emitEvent(event))
+        }
+      })
 
-    socket.on('error', (error) => {
-      this.emitEvent({ type: 'session:error', error: serializeError(error) })
-    })
+      socket.on('binary', (payload) => {
+        if (this.socket === socket && this.options.verbose) {
+          this.emitEvent({
+            type: 'internal:binary-message',
+            byteLength: payload.length,
+            opcode: payload[0],
+          })
+        }
+      })
+
+      socket.on('close', ({ code, reason } = {}) => {
+        this.pendingSockets.delete(socket)
+        if (this.socket && this.socket !== socket) {
+          return
+        }
+
+        if (!this.socket) {
+          remaining -= 1
+          if (remaining > 0) {
+            return
+          }
+          if (lastError) {
+            this.emitEvent({
+              type: 'session:error',
+              error: serializeError(lastError),
+            })
+          }
+        } else {
+          this.socket = null
+        }
+
+        this.connection = 'disconnected'
+        this.emitEvent({ type: 'session:disconnected', code, reason })
+        this.scheduleReconnect()
+      })
+
+      socket.on('error', (error) => {
+        if (this.socket === socket) {
+          this.emitEvent({ type: 'session:error', error: serializeError(error) })
+        } else {
+          lastError = error
+        }
+      })
+    }
   }
 
   private scheduleReconnect() {
