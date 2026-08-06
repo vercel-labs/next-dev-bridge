@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Readable build and runtime events for Next.js development tools."
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f5df00' d='M16 0a16 16 0 0 1 16 16H0A16 16 0 0 1 16 0Z'/%3E%3Cpath d='M0 16h32a16 16 0 0 1-32 0Z'/%3E%3C/svg%3E"
+    />
+    <title>next-dev-bridge</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --background: #ffffff;
+        --foreground: #171717;
+        --muted: #666666;
+        --subtle: #fafafa;
+        --border: #e5e5e5;
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        --sans: Arial, Helvetica, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(760px, calc(100% - 48px));
+        margin-left: 40px;
+      }
+
+      header {
+        display: flex;
+        height: 60px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        text-decoration: none;
+      }
+
+      .brand-icon {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: linear-gradient(to bottom, #f5df00 0 50%, #171717 50% 100%);
+      }
+
+      .header-links {
+        display: flex;
+        gap: 16px;
+      }
+
+      .header-links a {
+        color: var(--muted);
+        font-size: 14px;
+        text-decoration: none;
+      }
+
+      .header-links a:hover,
+      footer a:hover {
+        color: var(--foreground);
+      }
+
+      main {
+        padding: 60px 0 48px;
+      }
+
+      .hero {
+        max-width: 720px;
+        padding-bottom: 52px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 600px;
+        margin-bottom: 20px;
+        font-size: clamp(40px, 5vw, 56px);
+        font-weight: 650;
+        letter-spacing: -0.065em;
+        line-height: 1;
+      }
+
+      .lede {
+        max-width: 590px;
+        margin-bottom: 22px;
+        color: var(--muted);
+        font-size: 20px;
+        letter-spacing: -0.025em;
+        line-height: 1.5;
+      }
+
+      .hero-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .hero-links a {
+        text-decoration-color: #b5b5b5;
+        text-underline-offset: 4px;
+      }
+
+      .hero-links a:hover {
+        text-decoration-color: var(--foreground);
+      }
+
+      .signal-demo {
+        width: min(100%, 620px);
+        margin-top: 42px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--subtle);
+      }
+
+      .signal-header,
+      .signal-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .signal-header {
+        border-bottom: 1px solid var(--border);
+        padding: 13px 15px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .signal-path {
+        font-family: var(--mono);
+      }
+
+      .listening {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .listening::before {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--foreground);
+        content: "";
+        animation: blink 0.7s ease-in-out infinite;
+      }
+
+      .signal-list {
+        padding: 3px 15px;
+      }
+
+      .signal-row {
+        min-height: 48px;
+        border-bottom: 1px solid var(--border);
+        opacity: 0.28;
+        font-family: var(--mono);
+        font-size: 12px;
+        animation: signal 2.1s ease-in-out infinite;
+        animation-delay: var(--delay);
+        animation-fill-mode: backwards;
+      }
+
+      .signal-row:last-child {
+        border-bottom: 0;
+      }
+
+      .signal-row code {
+        font-weight: 700;
+      }
+
+      .signal-row span {
+        color: var(--muted);
+        text-align: right;
+      }
+
+      @keyframes signal {
+        0%,
+        28% {
+          opacity: 1;
+          transform: translateX(0);
+        }
+
+        36%,
+        100% {
+          opacity: 0.28;
+          transform: translateX(-2px);
+        }
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 0.35;
+        }
+
+        50% {
+          opacity: 1;
+        }
+      }
+
+      section:not(.hero) {
+        border-top: 1px solid var(--border);
+        padding: 50px 0;
+      }
+
+      h2 {
+        margin-bottom: 14px;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.045em;
+      }
+
+      .section-copy {
+        max-width: 580px;
+        margin-bottom: 22px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .install {
+        display: flex;
+        width: min(100%, 500px);
+        min-height: 52px;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--subtle);
+        padding: 0 17px;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .prompt {
+        margin-right: 12px;
+        color: #999999;
+        user-select: none;
+      }
+
+      .code {
+        overflow-x: auto;
+        width: 100%;
+        margin: 0;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--subtle);
+        padding: 18px;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.7;
+        tab-size: 2;
+      }
+
+      .cli-output {
+        display: block;
+        margin-top: 18px;
+        color: var(--muted);
+      }
+
+      .cli-output strong {
+        color: var(--foreground);
+        font-weight: 700;
+      }
+
+      .logged-results {
+        display: grid;
+        gap: 5px;
+        margin-top: 18px;
+        border-top: 1px solid var(--border);
+        padding-top: 16px;
+        color: var(--muted);
+      }
+
+      .log-line {
+        display: block;
+        opacity: 0;
+        animation-duration: 2.4s;
+        animation-iteration-count: infinite;
+        animation-timing-function: steps(1, end);
+      }
+
+      .log-line:nth-child(1) {
+        animation-name: log-first;
+      }
+
+      .log-line:nth-child(2) {
+        animation-name: log-second;
+      }
+
+      .log-line:nth-child(3) {
+        animation-name: log-third;
+      }
+
+      .log-line strong {
+        color: var(--foreground);
+        font-weight: 700;
+      }
+
+      @keyframes log-first {
+        0%,
+        12%,
+        92%,
+        100% {
+          opacity: 0;
+        }
+
+        13%,
+        86% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes log-second {
+        0%,
+        36%,
+        92%,
+        100% {
+          opacity: 0;
+        }
+
+        37%,
+        86% {
+          opacity: 1;
+        }
+      }
+
+      @keyframes log-third {
+        0%,
+        60%,
+        92%,
+        100% {
+          opacity: 0;
+        }
+
+        61%,
+        86% {
+          opacity: 1;
+        }
+      }
+
+      .keyword,
+      .api {
+        color: var(--foreground);
+        font-weight: 700;
+      }
+
+      .punctuation {
+        color: #a3a3a3;
+      }
+
+      .string {
+        color: #525252;
+      }
+
+      .capabilities {
+        display: grid;
+        gap: 0;
+        margin: 24px 0 0;
+        padding: 0;
+        border-top: 1px solid var(--border);
+        list-style: none;
+      }
+
+      .capabilities li {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 28px;
+        border-bottom: 1px solid var(--border);
+        padding: 17px 0;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .capabilities strong {
+        font-weight: 550;
+      }
+
+      .capabilities span {
+        color: var(--muted);
+      }
+
+      footer {
+        display: flex;
+        min-height: 80px;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 18px;
+      }
+
+      footer a {
+        text-decoration: none;
+      }
+
+      @media (max-width: 640px) {
+        .page {
+          width: calc(100% - 32px);
+          margin-left: 16px;
+        }
+
+        header {
+          height: 64px;
+        }
+
+        main {
+          padding-top: 48px;
+        }
+
+        .hero {
+          padding-bottom: 44px;
+        }
+
+        h1 {
+          font-size: clamp(38px, 11vw, 48px);
+        }
+
+        .lede {
+          font-size: 18px;
+        }
+
+        section:not(.hero) {
+          padding: 42px 0;
+        }
+
+        .capabilities li {
+          grid-template-columns: 1fr;
+          gap: 7px;
+        }
+
+        footer {
+          align-items: flex-start;
+          flex-direction: column;
+          justify-content: center;
+          gap: 12px;
+          padding: 28px 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        .listening::before,
+        .log-line,
+        .signal-row {
+          animation: none;
+        }
+
+        .log-line,
+        .signal-row {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <a class="brand" href="#top">
+          <span class="brand-icon" aria-hidden="true"></span>
+          <span>next-dev-bridge</span>
+        </a>
+        <nav class="header-links" aria-label="Project links">
+          <a href="https://www.npmjs.com/package/next-dev-bridge">npm</a>
+          <a href="https://github.com/vercel-labs/next-dev-bridge">github ↗</a>
+        </nav>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <h1>Readable Next.js events</h1>
+          <p class="lede">
+            Readable build and runtime events for CLIs, preview shells, agents,
+            and custom development tools.
+          </p>
+          <p class="hero-links">
+            <a href="#start">Get started</a>
+            <a
+              href="https://github.com/vercel-labs/next-dev-bridge/tree/main/examples"
+              >View examples</a
+            >
+          </p>
+
+          <div class="signal-demo" aria-label="Example normalized event stream">
+            <div class="signal-header">
+              <span class="signal-path">Next dev → next-dev-bridge</span>
+              <span class="listening">listening</span>
+            </div>
+            <div class="signal-list">
+              <div class="signal-row" style="--delay: 0s">
+                <code>build:error</code>
+                <span>1 compiler issue</span>
+              </div>
+              <div class="signal-row" style="--delay: 0.7s">
+                <code>build:recovered</code>
+                <span>clean</span>
+              </div>
+              <div class="signal-row" style="--delay: 1.4s">
+                <code>runtime:error</code>
+                <span>mapped to source</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="start">
+          <h2>Install</h2>
+          <p class="section-copy">
+            Connect to a running development server from Node or observe build
+            and runtime state in the browser.
+          </p>
+          <div class="install" aria-label="Installation command">
+            <span class="prompt">$</span>
+            <code>npm install next-dev-bridge</code>
+          </div>
+        </section>
+
+        <section>
+          <h2>Agents Friendly</h2>
+          <p class="section-copy">
+            Let an agent watch a running app without opening the browser.
+          </p>
+          <pre class="code"><code><span class="punctuation">$</span> <span class="api">connect-next</span> <span class="string">http://localhost:3000</span>
+
+<span class="cli-output logged-results"><span class="log-line"><strong>&gt;&gt;&gt; [WATCHING]</strong> localhost:3000</span>
+<span class="log-line"><strong>&gt;&gt;&gt; [ERROR]</strong> count=1 change=shown</span>
+<span class="log-line"><strong>&gt;&gt;&gt; [RECOVERED]</strong> warnings=0</span></span></code></pre>
+        </section>
+
+        <section>
+          <h2>Observe</h2>
+          <p class="section-copy">
+            Receive a compact event stream and decide how your interface should
+            respond.
+          </p>
+          <pre class="code"><code><span class="keyword">import</span> <span class="punctuation">{</span> <span class="api">connect</span> <span class="punctuation">}</span> <span class="keyword">from</span> <span class="string">'next-dev-bridge'</span>
+
+<span class="keyword">const</span> connection <span class="punctuation">=</span> <span class="api">connect</span><span class="punctuation">(</span>
+  <span class="punctuation">{</span> url<span class="punctuation">:</span> <span class="string">'http://localhost:3000'</span> <span class="punctuation">},</span>
+  <span class="punctuation">(</span>event<span class="punctuation">,</span> state<span class="punctuation">) =&gt; {</span>
+    console<span class="punctuation">.</span>log<span class="punctuation">(</span>event<span class="punctuation">.</span>type<span class="punctuation">,</span> state<span class="punctuation">.</span>phase<span class="punctuation">)</span>
+  <span class="punctuation">}</span>
+<span class="punctuation">)</span>
+
+process<span class="punctuation">.</span>once<span class="punctuation">(</span><span class="string">'SIGINT'</span><span class="punctuation">, () =&gt;</span> connection<span class="punctuation">.</span>stop<span class="punctuation">())</span>
+
+<span class="logged-results"><span class="log-line"><strong>build:ready</strong> ok</span>
+<span class="log-line"><strong>build:error</strong> error</span>
+<span class="log-line"><strong>build:recovered</strong> ok</span></span></code></pre>
+        </section>
+
+        <section>
+          <h2>One clear interface</h2>
+          <p class="section-copy">
+            Keep framework transport details out of your development UI.
+          </p>
+          <ul class="capabilities">
+            <li>
+              <strong>Build state</strong>
+              <span>Ready, failed, updated, and recovered.</span>
+            </li>
+            <li>
+              <strong>Runtime errors</strong>
+              <span>Browser failures with mapped frames when available.</span>
+            </li>
+            <li>
+              <strong>Any surface</strong>
+              <span>Use it in a CLI, preview shell, agent, or custom UI.</span>
+            </li>
+          </ul>
+        </section>
+      </main>
+
+      <footer>
+        <a href="https://github.com/vercel-labs">vercel-labs</a>
+        <div class="footer-links">
+          <a href="https://github.com/vercel-labs/next-dev-bridge/blob/main/docs/API.md"
+            >API</a
+          >
+          <a href="https://github.com/vercel-labs/next-dev-bridge/tree/main/examples"
+            >Examples</a
+          >
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

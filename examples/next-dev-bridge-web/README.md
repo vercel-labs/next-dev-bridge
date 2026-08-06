@@ -31,29 +31,9 @@ node dev-server.cjs -p 3001 -H 127.0.0.1
 The wrapper still runs Next in dev mode, but it can inject the portal-hiding
 style into Next's internal compiler-error HTML before the iframe receives it.
 
-## Vercel + Sandbox
+This is a development example, not the project website. The public site is the
+dependency-free [`site/index.html`](../../site/index.html); it does not start a
+Next.js server, create a sandbox, or run this viewer.
 
-To deploy the viewer app on Vercel while still running the preview app with
-`next dev`, create a Vercel project with:
-
-```text
-Root Directory: examples/next-dev-bridge-web
-Framework Preset: Next.js
-Build Command: default
-Output Directory: default
-```
-
-The web app and the sandbox preview fixture depend on the published
-`next-dev-bridge@0.1.0` package, so no custom Vercel install or build command is
-required.
-
-No extra environment variable is required for the default Vercel deployment.
-When `VERCEL` is defined, the viewer API routes use Sandbox mode automatically.
-
-On first load, the deployed viewer creates an empty Vercel Sandbox, writes the
-bundled `preview-fixture` files to `preview/`, installs the fixture
-dependencies from npm, starts that fixture in Next dev mode through
-`dev-server.cjs`, and points the iframe at the sandbox URL.
-
-For non-Vercel testing, `NEXT_DEV_BRIDGE_CONTROL_MODE=sandbox` still forces
-Sandbox mode, and `NEXT_DEV_BRIDGE_CONTROL_MODE=local` forces local preview mode.
+Set `NEXT_DEV_BRIDGE_CONTROL_MODE=sandbox` to exercise Sandbox mode locally, or
+`NEXT_DEV_BRIDGE_CONTROL_MODE=local` to force the default local preview mode.
