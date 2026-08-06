@@ -15,6 +15,7 @@ const TEST_APP_ROOT = path.join(__dirname, 'next-app')
 const PORT = Number(process.env.PORT || 3100)
 const HOST = '127.0.0.1'
 const DEV_URL = `http://${HOST}:${PORT}`
+const HMR_SETTLE_DELAY_MS = 1000
 const NEXT_BIN = path.join(
   REPO_ROOT,
   'node_modules',
@@ -253,6 +254,7 @@ async function runBuildErrorFlow(context) {
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
   const shownEvent = await shown
   assertFormattedErrors(shownEvent, 'syntax')
+  await delay(HMR_SETTLE_DELAY_MS)
 
   logScenarioHeader('build:missing-export', [
     'replace syntax error with a valid module missing an imported export',
@@ -271,6 +273,7 @@ async function runBuildErrorFlow(context) {
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
   const updatedEvent = await updated
   assertFormattedErrors(updatedEvent, 'missing export')
+  await delay(HMR_SETTLE_DELAY_MS)
 
   logScenarioHeader('build:recover', [
     'restore the build-errors dependency',
@@ -392,6 +395,10 @@ function requestIgnoringErrors(url) {
       req.destroy(new Error(`Request timed out: ${url}`))
     })
   })
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function waitForExit(child, timeoutMs) {
