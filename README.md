@@ -7,6 +7,8 @@ errors, when those errors update, when they recover, and, in the browser, when
 runtime errors happen. It normalizes the noisy HMR transport into a smaller set
 of events that are easier to render in a CLI, iframe shell, or custom dev UI.
 
+The observer supports the HMR endpoints used by Next.js 16.2 and 16.3.
+
 ## Install
 
 ```sh

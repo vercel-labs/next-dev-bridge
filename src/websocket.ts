@@ -4,10 +4,16 @@ import * as net from 'node:net'
 import * as tls from 'node:tls'
 
 export const DEFAULT_DEV_SERVER_URL = 'http://localhost:3000'
-export const DEFAULT_HMR_PATH = '/_next/webpack-hmr'
+export const DEFAULT_HMR_PATH = '/_next/hmr'
+export const HMR_PATHS = [DEFAULT_HMR_PATH, '/_next/webpack-hmr'] as const
 
 export interface NextHmrWebSocketOptions {
   url?: string
+  hmrPath?: string
+}
+
+export interface ConnectWebSocketOptions {
+  handshakeTimeoutMs?: number
 }
 
 export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
@@ -22,7 +28,9 @@ export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
 
   const protocol =
     base.protocol === 'https:' || base.protocol === 'wss:' ? 'wss:' : 'ws:'
-  const wsUrl = new URL(`${protocol}//${base.host}${DEFAULT_HMR_PATH}`)
+  const wsUrl = new URL(
+    `${protocol}//${base.host}${options.hmrPath || DEFAULT_HMR_PATH}`
+  )
 
   if (base.search) {
     for (const [name, value] of base.searchParams) {
@@ -33,8 +41,14 @@ export function buildHmrUrl(options: NextHmrWebSocketOptions = {}) {
   return wsUrl
 }
 
-export function connectWebSocket(url: URL) {
-  const client = new MinimalWebSocketClient(url)
+export function connectWebSocket(
+  url: URL,
+  options: ConnectWebSocketOptions = {}
+) {
+  const client = new MinimalWebSocketClient(
+    url,
+    options.handshakeTimeoutMs || 0
+  )
   client.connect()
   return client
 }
@@ -65,8 +79,10 @@ class MinimalWebSocketClient extends EventEmitter {
   closed: boolean
   fragments: { opcode: number; chunks: Buffer[] } | null
   expectedAccept?: string
+  handshakeTimeoutMs: number
+  handshakeTimer: ReturnType<typeof setTimeout> | null
 
-  constructor(url: URL) {
+  constructor(url: URL, handshakeTimeoutMs: number) {
     super()
     this.url = url
     this.socket = null
@@ -75,6 +91,8 @@ class MinimalWebSocketClient extends EventEmitter {
     this.opened = false
     this.closed = false
     this.fragments = null
+    this.handshakeTimeoutMs = handshakeTimeoutMs
+    this.handshakeTimer = null
   }
 
   connect() {
@@ -92,6 +110,18 @@ class MinimalWebSocketClient extends EventEmitter {
       : net.connect(socketOptions)
     this.socket = socket
 
+    if (this.handshakeTimeoutMs > 0) {
+      this.handshakeTimer = setTimeout(() => {
+        if (!this.opened && !this.closed) {
+          this.fail(
+            new Error(
+              `WebSocket handshake timed out after ${this.handshakeTimeoutMs}ms`
+            )
+          )
+        }
+      }, this.handshakeTimeoutMs)
+    }
+
     socket.once(isSecure ? 'secureConnect' : 'connect', () =>
       this.sendHandshake()
     )
@@ -100,6 +130,7 @@ class MinimalWebSocketClient extends EventEmitter {
     )
     socket.on('error', (error) => this.emit('error', error))
     socket.on('close', () => {
+      this.clearHandshakeTimer()
       if (!this.closed) {
         this.closed = true
         this.emit('close')
@@ -111,6 +142,7 @@ class MinimalWebSocketClient extends EventEmitter {
     if (this.closed) {
       return
     }
+    this.clearHandshakeTimer()
     this.closed = true
     if (this.opened) {
       this.sendFrame(0x8, Buffer.alloc(0))
@@ -163,6 +195,7 @@ class MinimalWebSocketClient extends EventEmitter {
         return
       }
       this.opened = true
+      this.clearHandshakeTimer()
       this.emit('open')
 
       if (rest.length > 0) {
@@ -307,6 +340,7 @@ class MinimalWebSocketClient extends EventEmitter {
   }
 
   fail(error) {
+    this.clearHandshakeTimer()
     this.emit('error', error)
     if (!this.closed) {
       this.closed = true
@@ -314,6 +348,13 @@ class MinimalWebSocketClient extends EventEmitter {
     }
     if (this.socket) {
       this.socket.destroy()
+    }
+  }
+
+  clearHandshakeTimer() {
+    if (this.handshakeTimer) {
+      clearTimeout(this.handshakeTimer)
+      this.handshakeTimer = null
     }
   }
 }

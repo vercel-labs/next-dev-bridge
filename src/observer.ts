@@ -9,12 +9,14 @@ import {
 } from './processor.js'
 import {
   DEFAULT_DEV_SERVER_URL,
+  HMR_PATHS,
   buildHmrUrl,
   connectWebSocket,
 } from './websocket.js'
 
 const RECONNECT_BASE_DELAY_MS = 1000
 const RECONNECT_MAX_DELAY_MS = 5000
+const HMR_HANDSHAKE_TIMEOUT_MS = 2000
 
 export interface NextInstanceOptions {
   url?: string
@@ -145,15 +147,25 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     return snapshot
   }
 
-  private connect() {
-    const wsUrl = buildHmrUrl(this.options)
-    this.connection = 'connecting'
-    this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
+  private connect(hmrPathIndex = 0) {
+    const wsUrl = buildHmrUrl({
+      ...this.options,
+      hmrPath: HMR_PATHS[hmrPathIndex],
+    })
+    if (hmrPathIndex === 0) {
+      this.connection = 'connecting'
+      this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
+    }
 
-    const socket = connectWebSocket(wsUrl)
+    const socket = connectWebSocket(wsUrl, {
+      handshakeTimeoutMs: HMR_HANDSHAKE_TIMEOUT_MS,
+    })
+    let opened = false
+    let connectionError: unknown
     this.socket = socket
 
     socket.on('open', () => {
+      opened = true
       this.reconnectAttempt = 0
       this.connection = 'connected'
       this.emitEvent({ type: 'session:connected', url: wsUrl.href })
@@ -174,8 +186,21 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     })
 
     socket.on('close', ({ code, reason } = {}) => {
-      if (this.socket === socket) {
-        this.socket = null
+      if (this.socket !== socket) {
+        return
+      }
+      this.socket = null
+
+      if (!opened && hmrPathIndex < HMR_PATHS.length - 1 && !this.closed) {
+        this.connect(hmrPathIndex + 1)
+        return
+      }
+
+      if (connectionError) {
+        this.emitEvent({
+          type: 'session:error',
+          error: serializeError(connectionError),
+        })
       }
       this.connection = 'disconnected'
       this.emitEvent({ type: 'session:disconnected', code, reason })
@@ -183,7 +208,11 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     })
 
     socket.on('error', (error) => {
-      this.emitEvent({ type: 'session:error', error: serializeError(error) })
+      connectionError = error
+      if (opened) {
+        this.emitEvent({ type: 'session:error', error: serializeError(error) })
+        connectionError = undefined
+      }
     })
   }
 

@@ -7,34 +7,37 @@ describe('observeNextDev', () => {
     vi.unstubAllGlobals()
   })
 
-  it('emits build events from the Next HMR websocket', () => {
-    const fakeWindow = createFakeWindow()
-    const events: any[] = []
-    const observer = observeNextDev((event, state) => {
-      events.push({ event, state })
-    })
+  it.each(['/_next/webpack-hmr', '/_next/hmr'])(
+    'emits build events from the Next HMR websocket at %s',
+    (hmrPath) => {
+      const fakeWindow = createFakeWindow()
+      const events: any[] = []
+      const observer = observeNextDev((event, state) => {
+        events.push({ event, state })
+      })
 
-    const socket = new fakeWindow.WebSocket('ws://localhost/_next/webpack-hmr')
-    socket.emit('message', {
-      data: JSON.stringify({
-        type: 'built',
+      const socket = new fakeWindow.WebSocket(`ws://localhost${hmrPath}`)
+      socket.emit('message', {
+        data: JSON.stringify({
+          type: 'built',
+          hash: 'error-hash',
+          errors: [{ message: 'Line 1:2: Parsing error: Unexpected token' }],
+          warnings: [],
+        }),
+      })
+
+      expect(events).toHaveLength(1)
+      expect(events[0].event).toMatchObject({
+        type: 'build:error',
         hash: 'error-hash',
-        errors: [{ message: 'Line 1:2: Parsing error: Unexpected token' }],
-        warnings: [],
-      }),
-    })
+      })
+      expect(events[0].state.build.hasErrors).toBe(true)
+      expect(events[0].state.runtime.errors).toEqual([])
 
-    expect(events).toHaveLength(1)
-    expect(events[0].event).toMatchObject({
-      type: 'build:error',
-      hash: 'error-hash',
-    })
-    expect(events[0].state.build.hasErrors).toBe(true)
-    expect(events[0].state.runtime.errors).toEqual([])
-
-    observer.stop()
-    expect(fakeWindow.WebSocket).toBe(fakeWindow.NativeWebSocket)
-  })
+      observer.stop()
+      expect(fakeWindow.WebSocket).toBe(fakeWindow.NativeWebSocket)
+    }
+  )
 
   it('emits source-mapped runtime errors', async () => {
     const fakeWindow = createFakeWindow()

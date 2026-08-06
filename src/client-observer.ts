@@ -63,6 +63,7 @@ export function observeNextDev(
   const NativeWebSocket = window.WebSocket
   const rewriteWebSocketURL = options.rewriteWebSocketURL || ((url) => url)
   const hmrPaths = [
+    '/_next/hmr',
     '/_next/webpack-hmr',
     '/_next/turbopack-hmr',
     '__webpack_hmr',
