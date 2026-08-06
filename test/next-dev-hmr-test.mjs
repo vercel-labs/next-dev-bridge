@@ -104,6 +104,7 @@ async function main() {
       (event) => event.type === 'session:connected',
       'watching'
     )
+    assertSingleConnectionSequence(context.observerEvents)
     const initialBuildOk = await context.waitForObserved(
       (event) => event.type === 'build:ready',
       'initial clean build state'
@@ -356,6 +357,28 @@ function assertFormattedErrors(event, label) {
   }
   if (!event.errors[0]) {
     throw new Error(`Expected error text for ${label}`)
+  }
+}
+
+function assertSingleConnectionSequence(events) {
+  const connectionEvents = events.filter((event) =>
+    [
+      'session:connecting',
+      'session:connected',
+      'session:disconnected',
+      'session:error',
+    ].includes(event.type)
+  )
+  const eventTypes = connectionEvents.map((event) => event.type)
+
+  if (
+    eventTypes.length !== 2 ||
+    eventTypes[0] !== 'session:connecting' ||
+    eventTypes[1] !== 'session:connected'
+  ) {
+    throw new Error(
+      `Expected one connection event sequence, got: ${eventTypes.join(', ')}`
+    )
   }
 }
 

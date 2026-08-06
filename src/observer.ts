@@ -152,8 +152,10 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
       ...this.options,
       hmrPath: HMR_PATHS[hmrPathIndex],
     })
-    this.connection = 'connecting'
-    this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
+    if (hmrPathIndex === 0) {
+      this.connection = 'connecting'
+      this.emitEvent({ type: 'session:connecting', url: wsUrl.href })
+    }
 
     const socket = connectWebSocket(wsUrl, {
       handshakeTimeoutMs: HMR_HANDSHAKE_TIMEOUT_MS,
