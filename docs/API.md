@@ -182,23 +182,30 @@ runtime.stop()
 
 Runtime errors are not carried by HMR build messages. In a Next preview iframe, prefer `observeNextDev()` when you need both build and runtime events.
 
-`observeRuntimeErrors()` captures `window.error`, `unhandledrejection`, and
-`window.reportError()` calls. `reportError()` captures errors that Next.js
-re-reports from implicit development boundaries, including the dev overlay and
-default global error boundary path, and emits them with
-`source: 'reported-error'`.
+`observeRuntimeErrors()` captures `window.error` and `unhandledrejection`.
+Enable Next's runtime-fatality lookup with `fatality: {}`. `observeNextDev()`
+enables it by default.
+
+```ts
+observeRuntimeErrors(listener, {
+  fatality: {},
+})
+```
+
+The lookup calls Next's development `get_errors` tool and matches the captured
+error against the current browser route. When Next provides the signal,
+`isFatal: true` means the error reached a Next-owned root boundary and replaced
+the application UI. `isFatal: false` means the application UI stayed mounted.
 
 Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
 Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
 runtime errors without making source-map requests.
 
-Each error also carries a `severity` field derived from the source. In React
-19+, `onUncaughtError` routes through `window.reportError`, so
-`source: 'reported-error'` maps to `severity: 'fatal'` — the tree was
-unmounted and the user is looking at the Next.js error route. Errors from
-`error` and `unhandledrejection` events leave the React tree mounted and are
-emitted as `severity: 'recoverable'`. Use this to distinguish "user is stuck
-on the error page" from "something logged but the app still works."
+Each error also carries a `severity` field derived from `isFatal`. If the
+installed Next version does not provide fatality, `isFatal` is omitted and
+`severity` remains `recoverable` for compatibility. Pass `fatality: false` to
+disable the lookup, or provide `fatality.endpoint` / `fatality.fetch` for a
+proxied development server.
 
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 
@@ -211,7 +218,7 @@ const script = createRuntimeErrorObserverScript({
 })
 ```
 
-The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. Omit `sourceMapEndpoint` to skip source-map requests from the self-contained script.
+The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. Omit `sourceMapEndpoint` to skip source-map requests from the self-contained script. It queries `/_next/mcp` for fatality by default; pass `fatalityEndpoint: false` to disable that lookup or a string to use a proxied endpoint.
 
 When source mapping is enabled, next-dev-bridge sends captured runtime stack frames to Next.js and uses the decoded frames when Next can resolve them. If Next returns generated chunk frames, next-dev-bridge tries alternate generated frame file shapes before falling back to the last response.
 

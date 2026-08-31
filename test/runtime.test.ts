@@ -261,6 +261,78 @@ describe('observeRuntimeErrors', () => {
     expect(events.map((event) => event.error.id)).toEqual([1, 2])
   })
 
+  it.each([
+    { isFatal: true, severity: 'fatal' },
+    { isFatal: false, severity: 'recoverable' },
+  ] as const)(
+    'uses Next get_errors fatality ($isFatal) for runtime severity',
+    async ({ isFatal, severity }) => {
+      const fakeWindow = createFakeWindow()
+      const events: any[] = []
+      const error = new Error('classified runtime error')
+      error.stack = 'Error: classified runtime error\n    at Page (app/page.js:2:1)'
+      const fetchMock = vi.fn(async () =>
+        createMcpFatalityResponse({
+          errorName: error.name,
+          isFatal,
+          message: error.message,
+        })
+      )
+
+      observeRuntimeErrors((event) => events.push(event), {
+        fatality: { fetch: fetchMock },
+        now: () => '2026-04-27T10:00:00.000Z',
+      })
+
+      fakeWindow.emit('error', {
+        error,
+        message: error.message,
+      })
+      await waitFor(() => events.length === 1)
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        new URL('/_next/mcp', 'http://localhost:3000/runtime-effect'),
+        expect.objectContaining({ method: 'POST' })
+      )
+      expect(events[0]).toMatchObject({
+        type: 'runtime:error',
+        error: {
+          isFatal,
+          message: error.message,
+          severity,
+        },
+      })
+    }
+  )
+
+  it('retries while Next has not added the runtime error to overlay state', async () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const error = new Error('late fatal runtime error')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(createMcpFatalityResponse())
+      .mockResolvedValueOnce(
+        createMcpFatalityResponse({
+          errorName: error.name,
+          isFatal: true,
+          message: error.message,
+        })
+      )
+
+    observeRuntimeErrors((event) => events.push(event), {
+      fatality: { fetch: fetchMock },
+    })
+    fakeWindow.emit('error', { error, message: error.message })
+    await waitFor(() => events.length === 1, 20)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(events[0].error).toMatchObject({
+      isFatal: true,
+      severity: 'fatal',
+    })
+  })
+
   it('can reset and stop listening', async () => {
     const fakeWindow = createFakeWindow()
     const events: any[] = []
@@ -296,6 +368,8 @@ describe('observeRuntimeErrors', () => {
     expect(script).not.toContain('reportError')
     expect(script).not.toContain('reported-error')
     expect(script).not.toContain('WebSocket')
+    expect(script).toContain('/_next/mcp')
+    expect(script).toContain('isFatal')
     expect(script).toContain('next-dev-bridge:runtime')
     expect(script).toContain('next-dev-bridge:runtime-reset')
     expect(script).toContain('https://example.com')
@@ -348,11 +422,44 @@ async function flushAsyncHandlers() {
   await Promise.resolve()
 }
 
-async function waitFor(condition: () => boolean) {
-  for (let index = 0; index < 10; index += 1) {
+async function waitFor(condition: () => boolean, attempts = 10) {
+  for (let index = 0; index < attempts; index += 1) {
     if (condition()) {
       return
     }
     await flushAsyncHandlers()
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
+}
+
+function createMcpFatalityResponse(
+  runtimeError?: {
+    errorName: string
+    isFatal: boolean
+    message: string
+  }
+) {
+  const output = {
+    configErrors: [],
+    sessionErrors: runtimeError
+      ? [
+          {
+            url: '/runtime-effect',
+            buildError: null,
+            runtimeErrors: [runtimeError],
+          },
+        ]
+      : [],
+  }
+  const envelope = {
+    jsonrpc: '2.0',
+    id: 1,
+    result: {
+      content: [{ type: 'text', text: JSON.stringify(output) }],
+    },
+  }
+
+  return new Response(`event: message\ndata: ${JSON.stringify(envelope)}\n\n`, {
+    headers: { 'content-type': 'text/event-stream' },
+  })
 }
