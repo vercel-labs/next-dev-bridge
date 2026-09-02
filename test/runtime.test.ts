@@ -7,6 +7,7 @@ import {
 
 describe('observeRuntimeErrors', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -261,6 +262,79 @@ describe('observeRuntimeErrors', () => {
     expect(events.map((event) => event.error.id)).toEqual([1, 2])
   })
 
+  it.each([
+    { fatal: true, severity: 'fatal' },
+    { fatal: false, severity: 'recoverable' },
+  ] as const)(
+    'uses Next HMR runtime state fatality ($fatal)',
+    async ({ fatal, severity }) => {
+      vi.useFakeTimers()
+      const fakeWindow = createFakeWindow()
+      const events: any[] = []
+      const observer = observeRuntimeErrors((event) => events.push(event), {
+        now: () => '2026-09-02T10:00:00.000Z',
+        preferHMR: true,
+      })
+
+      const browserError = new Error('boundary exploded')
+      fakeWindow.emit('error', {
+        error: browserError,
+        message: browserError.message,
+      })
+      expect(events).toEqual([])
+
+      expect(
+        observer.handleHMRMessage(
+          createHmrRuntimeState({
+            fatal,
+            message: browserError.message,
+          })
+        )
+      ).toBe(true)
+
+      expect(events).toHaveLength(1)
+      expect(events[0].error).toMatchObject({
+        source: 'nextjs',
+        message: browserError.message,
+        isFatal: fatal,
+        severity,
+        filename: 'app/page.tsx',
+        line: 12,
+        column: 5,
+      })
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(events).toHaveLength(1)
+    }
+  )
+
+  it('clears HMR runtime state and ignores state for another pathname', () => {
+    createFakeWindow()
+    const events: any[] = []
+    const observer = observeRuntimeErrors((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    expect(
+      observer.handleHMRMessage(
+        createHmrRuntimeState({ fatal: false, message: 'other route' }, '/other')
+      )
+    ).toBe(true)
+    expect(events).toEqual([])
+
+    observer.handleHMRMessage(
+      createHmrRuntimeState({ fatal: false, message: 'current route' })
+    )
+    observer.handleHMRMessage(createHmrRuntimeState())
+
+    expect(events.map((event) => event.type)).toEqual([
+      'runtime:error',
+      'runtime:cleared',
+    ])
+    expect(observer.getSnapshot()).toEqual({ errors: [] })
+    expect(observer.handleHMRMessage('{invalid')).toBe(false)
+  })
+
   it('can reset and stop listening', async () => {
     const fakeWindow = createFakeWindow()
     const events: any[] = []
@@ -355,4 +429,33 @@ async function waitFor(condition: () => boolean) {
     }
     await flushAsyncHandlers()
   }
+}
+
+function createHmrRuntimeState(
+  error?: { fatal: boolean; message: string },
+  pathname = '/runtime-effect'
+) {
+  return JSON.stringify({
+    type: 'runtime-error-state',
+    clientId: 'client-1',
+    pathname,
+    errors: error
+      ? [
+          {
+            type: 'runtime',
+            errorName: 'Error',
+            message: error.message,
+            fatal: error.fatal,
+            stack: [
+              {
+                file: 'app/page.tsx',
+                methodName: 'Page',
+                line: 12,
+                column: 5,
+              },
+            ],
+          },
+        ]
+      : [],
+  })
 }

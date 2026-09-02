@@ -79,14 +79,12 @@ window.addEventListener('pagehide', () => {
 })
 ```
 
-next-dev-bridge asks Next.js to decode captured runtime errors and uses the mapped frames
-when available.
-
-The runtime observer also wraps `window.reportError()` when available. Next.js
-uses `reportError()` in development for errors caught by its implicit overlay
-and default global error boundaries, so those failures are emitted as
-`runtime:error` events with `source: 'reported-error'` without adding an app
-boundary.
+On Next.js builds that publish `runtime-error-state` over HMR, next-dev-bridge
+uses that WebSocket state as the authoritative runtime source. Errors that
+replaced the application UI carry `isFatal: true` and `severity: 'fatal'`;
+errors that left it mounted carry `isFatal: false` and
+`severity: 'recoverable'`. Older Next.js builds fall back to browser error
+events without guessing fatality.
 
 For iframe runtimes that already rewrite websocket URLs, keep that rewrite and
 pass it to next-dev-bridge:
