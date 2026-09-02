@@ -154,6 +154,48 @@ describe('observeNextDev', () => {
       },
     })
   })
+
+  it('falls back to browser runtime errors without HMR runtime state', async () => {
+    vi.useFakeTimers()
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    observeNextDev((event, state) => events.push({ event, state }))
+    const socket = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'sync',
+        hash: 'legacy-next',
+        errors: [],
+        warnings: [],
+      }),
+    })
+    events.length = 0
+
+    const error = new Error('legacy browser runtime error')
+    fakeWindow.emit('error', { error, message: error.message })
+    expect(events).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      event: {
+        type: 'runtime:error',
+        error: {
+          source: 'error',
+          message: error.message,
+          severity: 'recoverable',
+        },
+      },
+      state: {
+        runtime: {
+          errors: [{ message: error.message, severity: 'recoverable' }],
+        },
+      },
+    })
+    expect(events[0].event.error.isFatal).toBeUndefined()
+  })
 })
 
 function createFakeWindow() {
