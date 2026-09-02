@@ -4,6 +4,7 @@ import { observeNextDev } from '../src/client'
 
 describe('observeNextDev', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -40,6 +41,7 @@ describe('observeNextDev', () => {
   )
 
   it('emits source-mapped runtime errors', async () => {
+    vi.useFakeTimers()
     const fakeWindow = createFakeWindow()
     const events: any[] = []
     const error = new Error('runtime exploded')
@@ -77,6 +79,7 @@ describe('observeNextDev', () => {
       lineno: 14,
       colno: 7,
     })
+    await vi.advanceTimersByTimeAsync(1000)
     await waitFor(() => events.length === 1)
 
     expect(events[0].event).toMatchObject({
@@ -99,6 +102,57 @@ describe('observeNextDev', () => {
       },
     })
     expect(events[0].state.runtime.errors).toHaveLength(1)
+  })
+
+  it('emits fatal runtime errors from the Next HMR websocket', () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    observeNextDev((event, state) => events.push({ event, state }), {
+      now: () => '2026-09-02T10:00:00.000Z',
+    })
+    const socket = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'runtime-error-state',
+        clientId: 'client-1',
+        pathname: '/runtime-effect',
+        errors: [
+          {
+            type: 'runtime',
+            errorName: 'Error',
+            message: 'root boundary exploded',
+            fatal: true,
+            stack: [
+              {
+                file: 'app/runtime-effect/page.tsx',
+                methodName: 'Page',
+                line: 8,
+                column: 3,
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      event: {
+        type: 'runtime:error',
+        error: {
+          source: 'nextjs',
+          message: 'root boundary exploded',
+          isFatal: true,
+          severity: 'fatal',
+        },
+      },
+      state: {
+        runtime: {
+          errors: [{ isFatal: true, severity: 'fatal' }],
+        },
+      },
+    })
   })
 })
 

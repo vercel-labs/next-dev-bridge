@@ -20,7 +20,10 @@ dev server.
 const observer = observeNextDev(listener, options)
 ```
 
-`observeNextDev()` is the preferred browser API. It wraps the Next HMR websocket, installs browser runtime error listeners, and emits normalized build/runtime events. Runtime errors include decoded frames when Next.js can resolve them.
+`observeNextDev()` is the preferred browser API. It wraps the Next HMR
+WebSocket and emits normalized build/runtime events. When Next publishes a
+`runtime-error-state` message, the bridge uses its formatted stack and `fatal`
+value. Browser error listeners remain as a fallback for older Next versions.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -180,25 +183,35 @@ runtime.reset()
 runtime.stop()
 ```
 
-Runtime errors are not carried by HMR build messages. In a Next preview iframe, prefer `observeNextDev()` when you need both build and runtime events.
+Runtime errors use a separate HMR `runtime-error-state` message rather than the
+build messages. In a Next preview iframe, prefer `observeNextDev()` when you
+need both build and runtime events.
 
-`observeRuntimeErrors()` captures `window.error`, `unhandledrejection`, and
-`window.reportError()` calls. `reportError()` captures errors that Next.js
-re-reports from implicit development boundaries, including the dev overlay and
-default global error boundary path, and emits them with
-`source: 'reported-error'`.
+`observeRuntimeErrors()` captures `window.error` and `unhandledrejection`.
+`observeNextDev()` additionally passes incoming `runtime-error-state` HMR
+messages to this observer. Next-provided errors use `source: 'nextjs'` and carry
+the authoritative `isFatal` value.
+
+If you own WebSocket interception yourself, enable HMR preference and forward
+the raw message to the runtime observer:
+
+```ts
+const runtime = observeRuntimeErrors(listener, { preferHMR: true })
+
+ws.addEventListener('message', (event) => {
+  runtime.handleHMRMessage(event.data)
+})
+```
 
 Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
 Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
 runtime errors without making source-map requests.
 
-Each error also carries a `severity` field derived from the source. In React
-19+, `onUncaughtError` routes through `window.reportError`, so
-`source: 'reported-error'` maps to `severity: 'fatal'` — the tree was
-unmounted and the user is looking at the Next.js error route. Errors from
-`error` and `unhandledrejection` events leave the React tree mounted and are
-emitted as `severity: 'recoverable'`. Use this to distinguish "user is stuck
-on the error page" from "something logged but the app still works."
+Each error also carries a `severity` field. For Next HMR runtime state,
+`fatal: true` maps to `isFatal: true` and `severity: 'fatal'`; `fatal: false`
+maps to `isFatal: false` and `severity: 'recoverable'`. Browser fallback errors
+omit `isFatal` and remain recoverable rather than guessing whether the UI was
+replaced.
 
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 
@@ -211,7 +224,7 @@ const script = createRuntimeErrorObserverScript({
 })
 ```
 
-The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. Omit `sourceMapEndpoint` to skip source-map requests from the self-contained script.
+The script posts `next-dev-bridge:runtime`, `next-dev-bridge:runtime-ready`, and listens for `next-dev-bridge:runtime-reset`. Omit `sourceMapEndpoint` to skip source-map requests from the self-contained script. This standalone observer uses browser error events; use `observeNextDev()` when HMR fatality is required.
 
 When source mapping is enabled, next-dev-bridge sends captured runtime stack frames to Next.js and uses the decoded frames when Next can resolve them. If Next returns generated chunk frames, next-dev-bridge tries alternate generated frame file shapes before falling back to the last response.
 

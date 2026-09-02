@@ -7,6 +7,7 @@ import {
 
 export type RuntimeErrorSource =
   | 'error'
+  | 'nextjs'
   | 'unhandledrejection'
 
 export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
@@ -15,6 +16,8 @@ export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
   severity: RuntimeErrorSeverity
+  /** Next.js reported that this error replaced the application UI. */
+  isFatal?: boolean
   name: string
   message: string
   stack: string
@@ -46,6 +49,8 @@ export type RuntimeErrorListener = (
 ) => void
 
 export interface RuntimeErrorObserverOptions {
+  /** Prefer Next's HMR runtime state, with browser events as a fallback. */
+  preferHMR?: boolean
   now?: () => Date | number | string
   sourceMap?: SourceMapOptions | false
 }
@@ -64,6 +69,7 @@ export interface RuntimeErrorObserver {
   stop(): void
   reset(): RuntimeErrorState
   getSnapshot(): RuntimeErrorState
+  handleHMRMessage(raw: unknown): boolean
 }
 
 interface RuntimeErrorDraft {
@@ -87,6 +93,8 @@ export function observeRuntimeErrors(
   const state: RuntimeErrorState = {
     errors: [],
   }
+  const pendingBrowserErrors = new Set<ReturnType<typeof setTimeout>>()
+  let browserFallbackActive = !options.preferHMR
   let nextId = 1
 
   async function recordError(draft: RuntimeErrorDraft) {
@@ -116,11 +124,11 @@ export function observeRuntimeErrors(
   }
 
   function onError(event: ErrorEvent) {
-    void recordError(fromErrorEvent(event))
+    captureBrowserError(fromErrorEvent(event))
   }
 
   function onUnhandledRejection(event: PromiseRejectionEvent) {
-    void recordError(fromUnhandledRejection(event))
+    captureBrowserError(fromUnhandledRejection(event))
   }
 
   window.addEventListener('error', onError)
@@ -130,8 +138,10 @@ export function observeRuntimeErrors(
     stop() {
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
+      clearPendingBrowserErrors()
     },
     reset() {
+      clearPendingBrowserErrors()
       state.errors = []
       emit({ type: 'runtime:cleared', errors: [] }, state)
       return cloneRuntimeState(state)
@@ -139,6 +149,91 @@ export function observeRuntimeErrors(
     getSnapshot() {
       return cloneRuntimeState(state)
     },
+    handleHMRMessage(raw) {
+      const message = parseHmrRuntimeErrorState(raw)
+      if (!message) {
+        return false
+      }
+
+      if (message.pathname !== getWindowPathname()) {
+        return true
+      }
+
+      browserFallbackActive = false
+      clearPendingBrowserErrors()
+      replaceWithHmrRuntimeState(message.errors)
+      return true
+    },
+  }
+
+  function captureBrowserError(draft: RuntimeErrorDraft) {
+    if (browserFallbackActive) {
+      void recordError(draft)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      pendingBrowserErrors.delete(timer)
+      browserFallbackActive = true
+      void recordError(draft)
+    }, 1000)
+    pendingBrowserErrors.add(timer)
+  }
+
+  function clearPendingBrowserErrors() {
+    for (const timer of pendingBrowserErrors) {
+      clearTimeout(timer)
+    }
+    pendingBrowserErrors.clear()
+  }
+
+  function replaceWithHmrRuntimeState(errors: HmrRuntimeError[]) {
+    const previousByKey = new Map(
+      state.errors.map((error) => [getRuntimeErrorKey(error), error])
+    )
+    const nextErrors = errors.map((error) => {
+      const draft = fromHmrRuntimeError(error)
+      const key = getRuntimeErrorKey({
+        ...draft,
+        isFatal: error.fatal,
+      })
+      const previous = previousByKey.get(key)
+      return previous || {
+        ...draft,
+        id: nextId++,
+        isFatal: error.fatal,
+        severity: getRuntimeErrorSeverity(error.fatal),
+        at: timestamp(options),
+      }
+    })
+
+    const previousKeys = state.errors.map(getRuntimeErrorKey)
+    const nextKeys = nextErrors.map(getRuntimeErrorKey)
+    if (JSON.stringify(previousKeys) === JSON.stringify(nextKeys)) {
+      return
+    }
+
+    const previousKeySet = new Set(previousKeys)
+    state.errors = nextErrors
+    if (nextErrors.length === 0) {
+      if (previousKeys.length > 0) {
+        emit({ type: 'runtime:cleared', errors: [] }, state)
+      }
+      return
+    }
+
+    for (const error of nextErrors) {
+      if (!previousKeySet.has(getRuntimeErrorKey(error))) {
+        emit(
+          {
+            type: 'runtime:error',
+            error: cloneRuntimeError(error),
+            errors: cloneRuntimeErrors(nextErrors),
+          },
+          state
+        )
+      }
+    }
   }
 
   function emit(event: RuntimeErrorEvent, nextState: RuntimeErrorState) {
@@ -178,6 +273,120 @@ function createNoopRuntimeObserver(): RuntimeErrorObserver {
     getSnapshot() {
       return emptyState
     },
+    handleHMRMessage() {
+      return false
+    },
+  }
+}
+
+interface HmrRuntimeError {
+  type: string
+  errorName: string
+  message: string
+  fatal: boolean
+  stack: Array<{
+    file: string
+    methodName: string
+    line: number | null
+    column: number | null
+  }>
+}
+
+interface HmrRuntimeErrorState {
+  pathname: string
+  errors: HmrRuntimeError[]
+}
+
+function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
+  let message = raw
+  if (typeof raw === 'string') {
+    try {
+      message = JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  if (
+    !isRecord(message) ||
+    message.type !== 'runtime-error-state' ||
+    typeof message.pathname !== 'string' ||
+    !Array.isArray(message.errors)
+  ) {
+    return null
+  }
+
+  const errors = message.errors.flatMap((error): HmrRuntimeError[] => {
+    if (
+      !isRecord(error) ||
+      typeof error.type !== 'string' ||
+      typeof error.errorName !== 'string' ||
+      typeof error.message !== 'string' ||
+      typeof error.fatal !== 'boolean' ||
+      !Array.isArray(error.stack)
+    ) {
+      return []
+    }
+
+    const stack = error.stack.flatMap((frame) => {
+      if (
+        !isRecord(frame) ||
+        typeof frame.file !== 'string' ||
+        typeof frame.methodName !== 'string' ||
+        (frame.line !== null && typeof frame.line !== 'number') ||
+        (frame.column !== null && typeof frame.column !== 'number')
+      ) {
+        return []
+      }
+      return [{
+        file: frame.file,
+        methodName: frame.methodName,
+        line: frame.line,
+        column: frame.column,
+      }]
+    })
+
+    if (stack.length !== error.stack.length) {
+      return []
+    }
+
+    return [{
+      type: error.type,
+      errorName: error.errorName,
+      message: error.message,
+      fatal: error.fatal,
+      stack,
+    }]
+  })
+
+  if (errors.length !== message.errors.length) {
+    return null
+  }
+
+  return {
+    pathname: message.pathname,
+    errors,
+  }
+}
+
+function fromHmrRuntimeError(error: HmrRuntimeError): RuntimeErrorDraft {
+  const firstFrame = error.stack[0]
+  const stack = [
+    `${error.errorName}: ${error.message}`,
+    ...error.stack.map((frame) => {
+      const location = `${frame.file}${frame.line === null ? '' : `:${frame.line}`}${frame.column === null ? '' : `:${frame.column}`}`
+      return `    at ${frame.methodName || '<anonymous>'} (${location})`
+    }),
+  ].join('\n')
+
+  return {
+    source: 'nextjs',
+    name: error.errorName,
+    message: error.message,
+    stack,
+    filename: firstFrame?.file,
+    line: firstFrame?.line ?? undefined,
+    column: firstFrame?.column ?? undefined,
   }
 }
 
@@ -276,8 +485,28 @@ function timestamp(options: RuntimeErrorObserverOptions) {
   return String(value)
 }
 
-function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
-  return 'recoverable'
+function getRuntimeErrorSeverity(isFatal?: boolean): RuntimeErrorSeverity {
+  return isFatal ? 'fatal' : 'recoverable'
+}
+
+function getRuntimeErrorKey(
+  error: Pick<RuntimeErrorInfo, 'name' | 'message' | 'stack'> & {
+    isFatal?: boolean
+  }
+) {
+  return `${error.name}\u0000${error.message}\u0000${error.stack}\u0000${String(error.isFatal)}`
+}
+
+function getWindowPathname() {
+  try {
+    return window.location.pathname || new URL(window.location.href).pathname
+  } catch {
+    return ''
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {

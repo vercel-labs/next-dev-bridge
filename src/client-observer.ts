@@ -52,6 +52,7 @@ export function observeNextDev(
     },
     {
       now: options.now,
+      preferHMR: true,
       sourceMap: options.sourceMap,
     }
   )
@@ -105,6 +106,7 @@ export function observeNextDev(
           return
         }
 
+        runtime.handleHMRMessage(message.data)
         const { events } = handleHMR(message.data)
         for (const event of events) {
           emit(event)
