@@ -279,7 +279,7 @@ describe('observeRuntimeErrors', () => {
         })
       )
 
-      const observer = observeRuntimeErrors((event) => events.push(event), {
+      observeRuntimeErrors((event) => events.push(event), {
         fatality: { fetch: fetchMock },
         now: () => '2026-04-27T10:00:00.000Z',
       })
@@ -302,10 +302,6 @@ describe('observeRuntimeErrors', () => {
           severity,
         },
       })
-
-      await fakeWindow.runInterval()
-      expect(events).toHaveLength(1)
-      observer.stop()
     }
   )
 
@@ -336,42 +332,6 @@ describe('observeRuntimeErrors', () => {
       severity: 'fatal',
     })
   })
-
-  it.each([
-    { isFatal: true, severity: 'fatal' },
-    { isFatal: false, severity: 'recoverable' },
-  ] as const)(
-    'polls Next for boundary errors that do not reach browser error hooks ($isFatal)',
-    async ({ isFatal, severity }) => {
-      const fakeWindow = createFakeWindow()
-      const events: any[] = []
-      const observer = observeRuntimeErrors((event) => events.push(event), {
-        fatality: {
-          fetch: async () =>
-            createMcpFatalityResponse({
-              errorName: 'Error',
-              isFatal,
-              message: 'caught by a Pages Router boundary',
-            }),
-          pollInterval: 1,
-        },
-      })
-
-      await fakeWindow.runInterval()
-      await fakeWindow.runInterval()
-      await waitFor(() => events.length === 1)
-
-      expect(events).toHaveLength(1)
-      expect(events[0].error).toMatchObject({
-        source: 'nextjs',
-        message: 'caught by a Pages Router boundary',
-        isFatal,
-        severity,
-      })
-
-      observer.stop()
-    }
-  )
 
   it('can reset and stop listening', async () => {
     const fakeWindow = createFakeWindow()
@@ -427,7 +387,6 @@ describe('observeRuntimeErrors', () => {
 
 function createFakeWindow() {
   const listeners = new Map<string, Set<(event: any) => void>>()
-  let intervalListener: (() => void) | undefined
   const fakeWindow = {
     location: {
       href: 'http://localhost:3000/runtime-effect',
@@ -440,13 +399,6 @@ function createFakeWindow() {
     },
     removeEventListener(type: string, listener: (event: any) => void) {
       listeners.get(type)?.delete(listener)
-    },
-    setInterval(listener: () => void) {
-      intervalListener = listener
-      return 1
-    },
-    clearInterval() {
-      intervalListener = undefined
     },
   }
 
@@ -461,9 +413,6 @@ function createFakeWindow() {
       for (const listener of listeners.get(type) || []) {
         listener(event)
       }
-    },
-    async runInterval() {
-      await intervalListener?.()
     },
   }
 }

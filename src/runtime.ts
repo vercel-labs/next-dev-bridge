@@ -7,7 +7,6 @@ import {
 
 export type RuntimeErrorSource =
   | 'error'
-  | 'nextjs'
   | 'unhandledrejection'
 
 export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
@@ -57,12 +56,10 @@ export interface RuntimeErrorObserverOptions {
 export interface RuntimeErrorFatalityOptions {
   endpoint?: string | URL
   fetch?: typeof globalThis.fetch
-  pollInterval?: number | false
 }
 
 export interface RuntimeErrorObserverScriptOptions {
   fatalityEndpoint?: string | false
-  fatalityPollInterval?: number | false
   isAppDirectory?: boolean
   messageType?: string
   readyMessageType?: string
@@ -99,15 +96,9 @@ export function observeRuntimeErrors(
   const state: RuntimeErrorState = {
     errors: [],
   }
-  const seenNextErrors = new Set<string>()
   let nextId = 1
-  let pollingNextErrors = false
 
-  async function recordError(
-    draft: RuntimeErrorDraft,
-    knownFatality?: { isFatal?: boolean }
-  ) {
-    seenNextErrors.add(getRuntimeErrorKey(getWindowLocationRoute(), draft))
+  async function recordError(draft: RuntimeErrorDraft) {
     const [mapped, isFatal] = await Promise.all([
       options.sourceMap
         ? mapErrorStack(
@@ -115,9 +106,7 @@ export function observeRuntimeErrors(
             getRuntimeSourceMapOptions(draft, options.sourceMap)
           )
         : undefined,
-      knownFatality
-        ? knownFatality.isFatal
-        : options.fatality === false || options.fatality === undefined
+      options.fatality === false || options.fatality === undefined
         ? undefined
         : resolveNextRuntimeErrorFatality(draft, options.fatality),
     ])
@@ -152,22 +141,10 @@ export function observeRuntimeErrors(
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)
 
-  const pollInterval =
-    options.fatality && options.fatality.pollInterval !== false
-      ? options.fatality.pollInterval || 500
-      : false
-  const pollTimer =
-    pollInterval && typeof window.setInterval === 'function'
-      ? window.setInterval(pollNextRuntimeErrors, pollInterval)
-      : undefined
-
   return {
     stop() {
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
-      if (pollTimer !== undefined) {
-        window.clearInterval(pollTimer)
-      }
     },
     reset() {
       state.errors = []
@@ -196,31 +173,6 @@ export function observeRuntimeErrors(
     }
   }
 
-  async function pollNextRuntimeErrors() {
-    if (pollingNextErrors || !options.fatality) {
-      return
-    }
-
-    pollingNextErrors = true
-    try {
-      const route = getWindowLocationRoute()
-      const errors = await fetchNextRuntimeErrors(options.fatality, route)
-      if (getWindowLocationRoute() !== route) {
-        return
-      }
-      for (const error of errors) {
-        const draft = fromNextRuntimeError(error)
-        const key = getRuntimeErrorKey(route, draft)
-        if (seenNextErrors.has(key)) {
-          continue
-        }
-        seenNextErrors.add(key)
-        void recordError(draft, { isFatal: error.isFatal })
-      }
-    } finally {
-      pollingNextErrors = false
-    }
-  }
 }
 
 export function createRuntimeErrorObserverScript(
@@ -273,41 +225,6 @@ function fromUnhandledRejection(
     name: error.name,
     message: error.message,
     stack: error.stack,
-  }
-}
-
-interface NextRuntimeError {
-  errorName: string
-  message: string
-  isFatal?: boolean
-  stack: Array<{
-    file?: string
-    methodName?: string
-    line?: number
-    column?: number
-  }>
-}
-
-function fromNextRuntimeError(error: NextRuntimeError): RuntimeErrorDraft {
-  const firstFrame = error.stack[0]
-  const stack = [
-    `${error.errorName}: ${error.message}`,
-    ...error.stack.map((frame) => {
-      const location = frame.file
-        ? `${frame.file}${frame.line ? `:${frame.line}` : ''}${frame.column ? `:${frame.column}` : ''}`
-        : '<unknown>'
-      return `    at ${frame.methodName || '<anonymous>'} (${location})`
-    }),
-  ].join('\n')
-
-  return {
-    source: 'nextjs',
-    name: error.errorName,
-    message: error.message,
-    stack,
-    filename: firstFrame?.file,
-    line: firstFrame?.line,
-    column: firstFrame?.column,
   }
 }
 
@@ -441,107 +358,28 @@ async function resolveNextRuntimeErrorFatality(
   return undefined
 }
 
-async function fetchNextRuntimeErrors(
-  options: RuntimeErrorFatalityOptions,
-  currentRoute: string
-): Promise<NextRuntimeError[]> {
-  const fetchImpl = options.fetch || globalThis.fetch
-  if (typeof fetchImpl !== 'function') {
-    return []
-  }
-
-  try {
-    const response = await fetchImpl(
-      new URL(options.endpoint || '/_next/mcp', window.location.href),
-      {
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 'next-dev-bridge-errors',
-          method: 'tools/call',
-          params: {
-            name: 'get_errors',
-            arguments: {},
-          },
-        }),
-        cache: 'no-store',
-        credentials: 'same-origin',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      }
-    )
-    if (!response.ok) {
-      return []
-    }
-    return findNextRuntimeErrors(await response.text(), currentRoute)
-  } catch {
-    return []
-  }
-}
-
 function findNextRuntimeErrorFatality(
   responseText: string,
   error: RuntimeErrorDraft,
   currentRoute: string
 ) {
-  if (!hasNextRuntimeErrorPayload(responseText)) {
-    return { isFatal: undefined, shouldRetry: false }
-  }
-  const matchingErrors = findNextRuntimeErrors(responseText, currentRoute).filter(
-    (candidate) =>
-      candidate.message === error.message &&
-      candidate.errorName === error.name
-  )
-
-  if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
-    return { isFatal: true, shouldRetry: false }
-  }
-  if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
-    return { isFatal: false, shouldRetry: false }
-  }
-  if (matchingErrors.length > 0) {
-    return { isFatal: undefined, shouldRetry: false }
-  }
-
-  return { isFatal: undefined, shouldRetry: true }
-}
-
-function hasNextRuntimeErrorPayload(responseText: string) {
-  const content = parseMcpResponseEnvelope(responseText)?.result?.content
-  return (
-    Array.isArray(content) &&
-    content.some((item) => {
-      if (!isRecord(item) || typeof item.text !== 'string') {
-        return false
-      }
-      return Array.isArray(parseJsonRecord(item.text)?.sessionErrors)
-    })
-  )
-}
-
-function findNextRuntimeErrors(
-  responseText: string,
-  currentRoute: string
-): NextRuntimeError[] {
   const envelope = parseMcpResponseEnvelope(responseText)
   const content = envelope?.result?.content
   if (!Array.isArray(content)) {
-    return []
+    return { isFatal: undefined, shouldRetry: false }
   }
 
-  return content.flatMap((item) => {
+  for (const item of content) {
     if (!isRecord(item) || typeof item.text !== 'string') {
-      return []
+      continue
     }
 
     const output = parseJsonRecord(item.text)
     if (!output || !Array.isArray(output.sessionErrors)) {
-      return []
+      continue
     }
 
-    return output.sessionErrors.flatMap((session) => {
+    const matchingErrors = output.sessionErrors.flatMap((session) => {
       if (
         !isRecord(session) ||
         typeof session.url !== 'string' ||
@@ -551,43 +389,29 @@ function findNextRuntimeErrors(
         return []
       }
 
-      return session.runtimeErrors.flatMap((candidate): NextRuntimeError[] => {
-        if (!isRecord(candidate) || typeof candidate.message !== 'string') {
-          return []
-        }
-
-        const stack = Array.isArray(candidate.stack)
-          ? candidate.stack.flatMap((frame) => {
-              if (!isRecord(frame)) {
-                return []
-              }
-              return [{
-                ...(typeof frame.file === 'string' ? { file: frame.file } : {}),
-                ...(typeof frame.methodName === 'string'
-                  ? { methodName: frame.methodName }
-                  : {}),
-                ...(typeof frame.line === 'number' ? { line: frame.line } : {}),
-                ...(typeof frame.column === 'number'
-                  ? { column: frame.column }
-                  : {}),
-              }]
-            })
-          : []
-
-        return [{
-          errorName:
-            typeof candidate.errorName === 'string'
-              ? candidate.errorName
-              : 'Error',
-          message: candidate.message,
-          ...(typeof candidate.isFatal === 'boolean'
-            ? { isFatal: candidate.isFatal }
-            : {}),
-          stack,
-        }]
-      })
+      return session.runtimeErrors.filter(
+        (candidate) =>
+          isRecord(candidate) &&
+          candidate.message === error.message &&
+          (typeof candidate.errorName !== 'string' ||
+            candidate.errorName === error.name)
+      )
     })
-  })
+
+    if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
+      return { isFatal: true, shouldRetry: false }
+    }
+    if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
+      return { isFatal: false, shouldRetry: false }
+    }
+    if (matchingErrors.length > 0) {
+      return { isFatal: undefined, shouldRetry: false }
+    }
+
+    return { isFatal: undefined, shouldRetry: true }
+  }
+
+  return { isFatal: undefined, shouldRetry: false }
 }
 
 function parseMcpResponseEnvelope(value: string): Record<string, any> | null {
@@ -629,13 +453,6 @@ function normalizeRoute(value: string) {
 
 function getWindowLocationRoute() {
   return normalizeRoute(window.location.href)
-}
-
-function getRuntimeErrorKey(
-  route: string,
-  error: Pick<RuntimeErrorDraft, 'name' | 'message'>
-) {
-  return `${route}\u0000${error.name}\u0000${error.message}`
 }
 
 function delay(milliseconds: number) {
@@ -707,12 +524,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
       : typeof options.fatalityEndpoint === 'string' && options.fatalityEndpoint
         ? options.fatalityEndpoint
         : '/_next/mcp'
-  const fatalityPollInterval =
-    options.fatalityPollInterval === false
-      ? false
-      : typeof options.fatalityPollInterval === 'number'
-        ? options.fatalityPollInterval
-        : 500
   const sourceMapEndpoint =
     typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
       ? options.sourceMapEndpoint
@@ -734,8 +545,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   let nextId = 1
   const windowId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
   const state = { errors: [] as RuntimeErrorInfo[] }
-  const seenNextErrors = new Set<string>()
-  let pollingNextErrors = false
 
   function post(type: string, payload: Record<string, unknown>) {
     if (window.parent === window) {
@@ -751,18 +560,10 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     )
   }
 
-  async function recordError(
-    draft: RuntimeErrorDraft,
-    knownFatality?: { isFatal?: boolean }
-  ) {
-    seenNextErrors.add(
-      getRuntimeErrorKey(normalizeRoute(window.location.href), draft)
-    )
-    const isFatal = knownFatality
-      ? knownFatality.isFatal
-      : fatalityEndpoint
-        ? await resolveNextRuntimeErrorFatality(draft)
-        : undefined
+  async function recordError(draft: RuntimeErrorDraft) {
+    const isFatal = fatalityEndpoint
+      ? await resolveNextRuntimeErrorFatality(draft)
+      : undefined
     const entry = {
       ...draft,
       id: nextId++,
@@ -849,19 +650,12 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onUnhandledRejection)
     window.removeEventListener('message', onMessage)
-    if (pollTimer !== undefined) {
-      window.clearInterval(pollTimer)
-    }
     delete (window as any)[symbol]
   }
 
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)
   window.addEventListener('message', onMessage)
-  const pollTimer =
-    fatalityEndpoint && fatalityPollInterval
-      ? window.setInterval(pollNextRuntimeErrors, fatalityPollInterval)
-      : undefined
 
   ;(window as any)[symbol] = {
     windowId,
@@ -910,29 +704,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     }
   }
 
-  function fromNextRuntimeError(error: NextRuntimeError): RuntimeErrorDraft {
-    const firstFrame = error.stack[0]
-    const stack = [
-      `${error.errorName}: ${error.message}`,
-      ...error.stack.map((frame) => {
-        const location = frame.file
-          ? `${frame.file}${frame.line ? `:${frame.line}` : ''}${frame.column ? `:${frame.column}` : ''}`
-          : '<unknown>'
-        return `    at ${frame.methodName || '<anonymous>'} (${location})`
-      }),
-    ].join('\n')
-
-    return {
-      source: 'nextjs',
-      name: error.errorName,
-      message: error.message,
-      stack,
-      filename: firstFrame?.file,
-      line: firstFrame?.line,
-      column: firstFrame?.column,
-    }
-  }
-
   function toErrorShape(value: unknown, fallbackMessage: string) {
     if (value instanceof Error) {
       return {
@@ -968,32 +739,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
             ? fallbackMessage
             : String(value),
       stack: '',
-    }
-  }
-
-  async function pollNextRuntimeErrors() {
-    if (pollingNextErrors) {
-      return
-    }
-
-    pollingNextErrors = true
-    try {
-      const route = normalizeRoute(window.location.href)
-      const errors = await fetchNextRuntimeErrors(route)
-      if (normalizeRoute(window.location.href) !== route) {
-        return
-      }
-      for (const error of errors) {
-        const draft = fromNextRuntimeError(error)
-        const key = getRuntimeErrorKey(route, draft)
-        if (seenNextErrors.has(key)) {
-          continue
-        }
-        seenNextErrors.add(key)
-        void recordError(draft, { isFatal: error.isFatal })
-      }
-    } finally {
-      pollingNextErrors = false
     }
   }
 
@@ -1472,156 +1217,62 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     return undefined
   }
 
-  async function fetchNextRuntimeErrors(
-    currentRoute: string
-  ): Promise<NextRuntimeError[]> {
-    try {
-      const response = await fetch(
-        new URL(fatalityEndpoint, window.location.href),
-        {
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'next-dev-bridge-errors',
-            method: 'tools/call',
-            params: {
-              name: 'get_errors',
-              arguments: {},
-            },
-          }),
-          cache: 'no-store',
-          credentials: 'same-origin',
-          headers: {
-            accept: 'application/json, text/event-stream',
-            'content-type': 'application/json',
-          },
-          method: 'POST',
-        }
-      )
-      if (!response.ok) {
-        return []
-      }
-      return findNextRuntimeErrors(await response.text(), currentRoute)
-    } catch {
-      return []
-    }
-  }
-
   function findNextRuntimeErrorFatality(
     responseText: string,
     error: RuntimeErrorDraft,
     currentRoute: string
   ) {
-    if (!hasNextRuntimeErrorPayload(responseText)) {
-      return { isFatal: undefined, shouldRetry: false }
-    }
-    const matchingErrors = findNextRuntimeErrors(
-      responseText,
-      currentRoute
-    ).filter(
-      (candidate) =>
-        candidate.message === error.message &&
-        candidate.errorName === error.name
-    )
-
-    if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
-      return { isFatal: true, shouldRetry: false }
-    }
-    if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
-      return { isFatal: false, shouldRetry: false }
-    }
-    if (matchingErrors.length > 0) {
-      return { isFatal: undefined, shouldRetry: false }
-    }
-
-    return { isFatal: undefined, shouldRetry: true }
-  }
-
-  function hasNextRuntimeErrorPayload(responseText: string) {
-    const content = parseMcpResponseEnvelope(responseText)?.result?.content
-    return (
-      Array.isArray(content) &&
-      content.some((item: unknown) => {
-        if (!isRecord(item) || typeof item.text !== 'string') {
-          return false
-        }
-        return Array.isArray(parseJsonRecord(item.text)?.sessionErrors)
-      })
-    )
-  }
-
-  function findNextRuntimeErrors(
-    responseText: string,
-    currentRoute: string
-  ): NextRuntimeError[] {
     const envelope = parseMcpResponseEnvelope(responseText)
     const content = envelope?.result?.content
     if (!Array.isArray(content)) {
-      return []
+      return { isFatal: undefined, shouldRetry: false }
     }
 
-    return content.flatMap((item: unknown) => {
+    for (const item of content) {
       if (!isRecord(item) || typeof item.text !== 'string') {
-        return []
+        continue
       }
 
       const output = parseJsonRecord(item.text)
       if (!output || !Array.isArray(output.sessionErrors)) {
-        return []
+        continue
       }
 
-      return output.sessionErrors.flatMap((session: unknown) => {
-        if (
-          !isRecord(session) ||
-          typeof session.url !== 'string' ||
-          normalizeRoute(session.url) !== currentRoute ||
-          !Array.isArray(session.runtimeErrors)
-        ) {
-          return []
-        }
-
-        return session.runtimeErrors.flatMap(
-          (candidate: unknown): NextRuntimeError[] => {
-            if (!isRecord(candidate) || typeof candidate.message !== 'string') {
-              return []
-            }
-
-            const stack = Array.isArray(candidate.stack)
-              ? candidate.stack.flatMap((frame: unknown) => {
-                  if (!isRecord(frame)) {
-                    return []
-                  }
-                  return [{
-                    ...(typeof frame.file === 'string'
-                      ? { file: frame.file }
-                      : {}),
-                    ...(typeof frame.methodName === 'string'
-                      ? { methodName: frame.methodName }
-                      : {}),
-                    ...(typeof frame.line === 'number'
-                      ? { line: frame.line }
-                      : {}),
-                    ...(typeof frame.column === 'number'
-                      ? { column: frame.column }
-                      : {}),
-                  }]
-                })
-              : []
-
-            return [{
-              errorName:
-                typeof candidate.errorName === 'string'
-                  ? candidate.errorName
-                  : 'Error',
-              message: candidate.message,
-              ...(typeof candidate.isFatal === 'boolean'
-                ? { isFatal: candidate.isFatal }
-                : {}),
-              stack,
-            }]
+      const matchingErrors = output.sessionErrors.flatMap(
+        (session: unknown) => {
+          if (
+            !isRecord(session) ||
+            typeof session.url !== 'string' ||
+            normalizeRoute(session.url) !== currentRoute ||
+            !Array.isArray(session.runtimeErrors)
+          ) {
+            return []
           }
-        )
-      })
-    })
+
+          return session.runtimeErrors.filter(
+            (candidate: unknown) =>
+              isRecord(candidate) &&
+              candidate.message === error.message &&
+              (typeof candidate.errorName !== 'string' ||
+                candidate.errorName === error.name)
+          )
+        }
+      )
+
+      if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
+        return { isFatal: true, shouldRetry: false }
+      }
+      if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
+        return { isFatal: false, shouldRetry: false }
+      }
+      if (matchingErrors.length > 0) {
+        return { isFatal: undefined, shouldRetry: false }
+      }
+
+      return { isFatal: undefined, shouldRetry: true }
+    }
+
+    return { isFatal: undefined, shouldRetry: false }
   }
 
   function parseMcpResponseEnvelope(value: string) {
@@ -1659,13 +1310,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     } catch {
       return value
     }
-  }
-
-  function getRuntimeErrorKey(
-    route: string,
-    error: Pick<RuntimeErrorDraft, 'name' | 'message'>
-  ) {
-    return `${route}\u0000${error.name}\u0000${error.message}`
   }
 
   function delay(milliseconds: number) {
