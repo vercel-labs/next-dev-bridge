@@ -15,8 +15,6 @@ export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
   severity: RuntimeErrorSeverity
-  /** Next.js reported that this error replaced the application UI. */
-  isFatal?: boolean
   name: string
   message: string
   stack: string
@@ -48,18 +46,11 @@ export type RuntimeErrorListener = (
 ) => void
 
 export interface RuntimeErrorObserverOptions {
-  fatality?: RuntimeErrorFatalityOptions | false
   now?: () => Date | number | string
   sourceMap?: SourceMapOptions | false
 }
 
-export interface RuntimeErrorFatalityOptions {
-  endpoint?: string | URL
-  fetch?: typeof globalThis.fetch
-}
-
 export interface RuntimeErrorObserverScriptOptions {
-  fatalityEndpoint?: string | false
   isAppDirectory?: boolean
   messageType?: string
   readyMessageType?: string
@@ -99,24 +90,18 @@ export function observeRuntimeErrors(
   let nextId = 1
 
   async function recordError(draft: RuntimeErrorDraft) {
-    const [mapped, isFatal] = await Promise.all([
-      options.sourceMap
-        ? mapErrorStack(
-            draft,
-            getRuntimeSourceMapOptions(draft, options.sourceMap)
-          )
-        : undefined,
-      options.fatality === false || options.fatality === undefined
-        ? undefined
-        : resolveNextRuntimeErrorFatality(draft, options.fatality),
-    ])
     const entry: RuntimeErrorInfo = {
       ...draft,
       id: nextId++,
-      severity: getRuntimeErrorSeverity(isFatal),
+      severity: getRuntimeErrorSeverity(),
       at: timestamp(options),
-      ...(isFatal === undefined ? {} : { isFatal }),
-      ...(mapped === undefined ? {} : { mapped }),
+    }
+
+    if (options.sourceMap) {
+      entry.mapped = await mapErrorStack(
+        entry,
+        getRuntimeSourceMapOptions(entry, options.sourceMap)
+      )
     }
 
     state.errors = [...state.errors, entry]
@@ -163,7 +148,7 @@ export function observeRuntimeErrors(
   }
 
   function getRuntimeSourceMapOptions(
-    error: Pick<RuntimeErrorInfo, 'filename'>,
+    error: RuntimeErrorInfo,
     sourceMap: SourceMapOptions
   ): SourceMapOptions {
     return {
@@ -291,176 +276,8 @@ function timestamp(options: RuntimeErrorObserverOptions) {
   return String(value)
 }
 
-function getRuntimeErrorSeverity(isFatal?: boolean): RuntimeErrorSeverity {
-  return isFatal ? 'fatal' : 'recoverable'
-}
-
-async function resolveNextRuntimeErrorFatality(
-  error: RuntimeErrorDraft,
-  options: RuntimeErrorFatalityOptions
-): Promise<boolean | undefined> {
-  const fetchImpl = options.fetch || globalThis.fetch
-  if (typeof fetchImpl !== 'function') {
-    return undefined
-  }
-
-  const endpoint = new URL(
-    options.endpoint || '/_next/mcp',
-    window.location.href
-  )
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) {
-      await delay(50 * attempt)
-    }
-
-    let response: Response
-    try {
-      response = await fetchImpl(endpoint, {
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: `next-dev-bridge-fatality-${attempt}`,
-          method: 'tools/call',
-          params: {
-            name: 'get_errors',
-            arguments: {},
-          },
-        }),
-        cache: 'no-store',
-        credentials: 'same-origin',
-        headers: {
-          accept: 'application/json, text/event-stream',
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      })
-    } catch {
-      return undefined
-    }
-
-    if (!response.ok) {
-      return undefined
-    }
-
-    const lookup = findNextRuntimeErrorFatality(
-      await response.text(),
-      error,
-      getWindowLocationRoute()
-    )
-    if (lookup.isFatal !== undefined) {
-      return lookup.isFatal
-    }
-    if (!lookup.shouldRetry) {
-      return undefined
-    }
-  }
-
-  return undefined
-}
-
-function findNextRuntimeErrorFatality(
-  responseText: string,
-  error: RuntimeErrorDraft,
-  currentRoute: string
-) {
-  const envelope = parseMcpResponseEnvelope(responseText)
-  const content = envelope?.result?.content
-  if (!Array.isArray(content)) {
-    return { isFatal: undefined, shouldRetry: false }
-  }
-
-  for (const item of content) {
-    if (!isRecord(item) || typeof item.text !== 'string') {
-      continue
-    }
-
-    const output = parseJsonRecord(item.text)
-    if (!output || !Array.isArray(output.sessionErrors)) {
-      continue
-    }
-
-    const matchingErrors = output.sessionErrors.flatMap((session) => {
-      if (
-        !isRecord(session) ||
-        typeof session.url !== 'string' ||
-        normalizeRoute(session.url) !== currentRoute ||
-        !Array.isArray(session.runtimeErrors)
-      ) {
-        return []
-      }
-
-      return session.runtimeErrors.filter(
-        (candidate) =>
-          isRecord(candidate) &&
-          candidate.message === error.message &&
-          (typeof candidate.errorName !== 'string' ||
-            candidate.errorName === error.name)
-      )
-    })
-
-    if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
-      return { isFatal: true, shouldRetry: false }
-    }
-    if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
-      return { isFatal: false, shouldRetry: false }
-    }
-    if (matchingErrors.length > 0) {
-      return { isFatal: undefined, shouldRetry: false }
-    }
-
-    return { isFatal: undefined, shouldRetry: true }
-  }
-
-  return { isFatal: undefined, shouldRetry: false }
-}
-
-function parseMcpResponseEnvelope(value: string): Record<string, any> | null {
-  const direct = parseJsonRecord(value)
-  if (direct) {
-    return direct
-  }
-
-  for (const line of value.split('\n')) {
-    if (!line.startsWith('data:')) {
-      continue
-    }
-    const envelope = parseJsonRecord(line.slice('data:'.length).trim())
-    if (envelope) {
-      return envelope
-    }
-  }
-
-  return null
-}
-
-function parseJsonRecord(value: string): Record<string, any> | null {
-  try {
-    const parsed = JSON.parse(value)
-    return isRecord(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function normalizeRoute(value: string) {
-  try {
-    const url = new URL(value, window.location.href)
-    return url.pathname + url.search + url.hash
-  } catch {
-    return value
-  }
-}
-
-function getWindowLocationRoute() {
-  return normalizeRoute(window.location.href)
-}
-
-function delay(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
+  return 'recoverable'
 }
 
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {
@@ -518,12 +335,6 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   const resetMessageType = options.resetMessageType || 'next-dev-bridge:runtime-reset'
   const targetOrigin = options.targetOrigin || '*'
   const isAppDirectory = options.isAppDirectory !== false
-  const fatalityEndpoint =
-    options.fatalityEndpoint === false
-      ? ''
-      : typeof options.fatalityEndpoint === 'string' && options.fatalityEndpoint
-        ? options.fatalityEndpoint
-        : '/_next/mcp'
   const sourceMapEndpoint =
     typeof options.sourceMapEndpoint === 'string' && options.sourceMapEndpoint
       ? options.sourceMapEndpoint
@@ -561,15 +372,11 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
   }
 
   async function recordError(draft: RuntimeErrorDraft) {
-    const isFatal = fatalityEndpoint
-      ? await resolveNextRuntimeErrorFatality(draft)
-      : undefined
     const entry = {
       ...draft,
       id: nextId++,
-      severity: getRuntimeErrorSeverity(isFatal),
+      severity: getRuntimeErrorSeverity(),
       at: new Date().toISOString(),
-      ...(isFatal === undefined ? {} : { isFatal }),
     } as RuntimeErrorInfo
 
     state.errors = [...state.errors, entry]
@@ -1162,162 +969,8 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     return `${message}\n    at <anonymous> (${filename}:${line}:${column})`
   }
 
-  async function resolveNextRuntimeErrorFatality(
-    error: RuntimeErrorDraft
-  ): Promise<boolean | undefined> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (attempt > 0) {
-        await delay(50 * attempt)
-      }
-
-      let response: Response
-      try {
-        response = await fetch(
-          new URL(fatalityEndpoint, window.location.href),
-          {
-            body: JSON.stringify({
-              jsonrpc: '2.0',
-              id: `next-dev-bridge-fatality-${attempt}`,
-              method: 'tools/call',
-              params: {
-                name: 'get_errors',
-                arguments: {},
-              },
-            }),
-            cache: 'no-store',
-            credentials: 'same-origin',
-            headers: {
-              accept: 'application/json, text/event-stream',
-              'content-type': 'application/json',
-            },
-            method: 'POST',
-          }
-        )
-      } catch {
-        return undefined
-      }
-
-      if (!response.ok) {
-        return undefined
-      }
-
-      const lookup = findNextRuntimeErrorFatality(
-        await response.text(),
-        error,
-        normalizeRoute(window.location.href)
-      )
-      if (lookup.isFatal !== undefined) {
-        return lookup.isFatal
-      }
-      if (!lookup.shouldRetry) {
-        return undefined
-      }
-    }
-
-    return undefined
-  }
-
-  function findNextRuntimeErrorFatality(
-    responseText: string,
-    error: RuntimeErrorDraft,
-    currentRoute: string
-  ) {
-    const envelope = parseMcpResponseEnvelope(responseText)
-    const content = envelope?.result?.content
-    if (!Array.isArray(content)) {
-      return { isFatal: undefined, shouldRetry: false }
-    }
-
-    for (const item of content) {
-      if (!isRecord(item) || typeof item.text !== 'string') {
-        continue
-      }
-
-      const output = parseJsonRecord(item.text)
-      if (!output || !Array.isArray(output.sessionErrors)) {
-        continue
-      }
-
-      const matchingErrors = output.sessionErrors.flatMap(
-        (session: unknown) => {
-          if (
-            !isRecord(session) ||
-            typeof session.url !== 'string' ||
-            normalizeRoute(session.url) !== currentRoute ||
-            !Array.isArray(session.runtimeErrors)
-          ) {
-            return []
-          }
-
-          return session.runtimeErrors.filter(
-            (candidate: unknown) =>
-              isRecord(candidate) &&
-              candidate.message === error.message &&
-              (typeof candidate.errorName !== 'string' ||
-                candidate.errorName === error.name)
-          )
-        }
-      )
-
-      if (matchingErrors.some((candidate) => candidate.isFatal === true)) {
-        return { isFatal: true, shouldRetry: false }
-      }
-      if (matchingErrors.some((candidate) => candidate.isFatal === false)) {
-        return { isFatal: false, shouldRetry: false }
-      }
-      if (matchingErrors.length > 0) {
-        return { isFatal: undefined, shouldRetry: false }
-      }
-
-      return { isFatal: undefined, shouldRetry: true }
-    }
-
-    return { isFatal: undefined, shouldRetry: false }
-  }
-
-  function parseMcpResponseEnvelope(value: string) {
-    const direct = parseJsonRecord(value)
-    if (direct) {
-      return direct
-    }
-
-    for (const line of value.split('\n')) {
-      if (!line.startsWith('data:')) {
-        continue
-      }
-      const envelope = parseJsonRecord(line.slice('data:'.length).trim())
-      if (envelope) {
-        return envelope
-      }
-    }
-
-    return null
-  }
-
-  function parseJsonRecord(value: string) {
-    try {
-      const parsed = JSON.parse(value)
-      return isRecord(parsed) && !Array.isArray(parsed) ? parsed : null
-    } catch {
-      return null
-    }
-  }
-
-  function normalizeRoute(value: string) {
-    try {
-      const url = new URL(value, window.location.href)
-      return url.pathname + url.search + url.hash
-    } catch {
-      return value
-    }
-  }
-
-  function delay(milliseconds: number) {
-    return new Promise((resolve) => setTimeout(resolve, milliseconds))
-  }
-
-  function getRuntimeErrorSeverity(isFatal?: boolean): RuntimeErrorSeverity {
-    return isFatal ? 'fatal' : 'recoverable'
+  function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
+    return 'recoverable'
   }
 
   function safeStringify(value: unknown) {

@@ -80,10 +80,13 @@ window.addEventListener('pagehide', () => {
 ```
 
 next-dev-bridge asks Next.js to decode captured runtime errors and uses the mapped frames
-when available. It also queries Next's development `get_errors` tool to classify
-runtime errors. Errors that reached a Next-owned root boundary carry
-`isFatal: true` and `severity: 'fatal'`; errors that left the application UI
-mounted carry `isFatal: false` and `severity: 'recoverable'`.
+when available.
+
+The runtime observer also wraps `window.reportError()` when available. Next.js
+uses `reportError()` in development for errors caught by its implicit overlay
+and default global error boundaries, so those failures are emitted as
+`runtime:error` events with `source: 'reported-error'` without adding an app
+boundary.
 
 For iframe runtimes that already rewrite websocket URLs, keep that rewrite and
 pass it to next-dev-bridge:
