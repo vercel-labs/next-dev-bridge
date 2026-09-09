@@ -12,12 +12,19 @@ export type RuntimeErrorSource =
 
 export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
 
+export interface RuntimeErrorBoundary {
+  kind: 'default-global' | 'custom-global' | 'custom'
+  name?: string
+}
+
 export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
   severity: RuntimeErrorSeverity
-  /** Next.js reported that this error replaced the application UI. */
+  /** Whether this error reached Next.js' default global error boundary. */
   isFatal?: boolean
+  /** The React error boundary reported by Next.js, when one caught the error. */
+  boundary?: RuntimeErrorBoundary
   name: string
   message: string
   stack: string
@@ -77,6 +84,7 @@ interface RuntimeErrorDraft {
   name: string
   message: string
   stack: string
+  boundary?: RuntimeErrorBoundary
   filename?: string
   line?: number
   column?: number
@@ -159,6 +167,15 @@ export function observeRuntimeErrors(
         return true
       }
 
+      const requestId = getWindowHmrRequestId()
+      if (
+        typeof message.htmlRequestId === 'string' &&
+        requestId !== undefined &&
+        message.htmlRequestId !== requestId
+      ) {
+        return true
+      }
+
       browserFallbackActive = false
       clearPendingBrowserErrors()
       replaceWithHmrRuntimeState(message.errors)
@@ -193,16 +210,17 @@ export function observeRuntimeErrors(
     )
     const nextErrors = errors.map((error) => {
       const draft = fromHmrRuntimeError(error)
+      const isFatal = getHmrRuntimeErrorFatality(error)
       const key = getRuntimeErrorKey({
         ...draft,
-        isFatal: error.fatal,
+        isFatal,
       })
       const previous = previousByKey.get(key)
       return previous || {
         ...draft,
         id: nextId++,
-        isFatal: error.fatal,
-        severity: getRuntimeErrorSeverity(error.fatal),
+        isFatal,
+        severity: getRuntimeErrorSeverity(isFatal),
         at: timestamp(options),
       }
     })
@@ -283,7 +301,8 @@ interface HmrRuntimeError {
   type: string
   errorName: string
   message: string
-  fatal: boolean
+  fatal?: boolean
+  boundary?: RuntimeErrorBoundary
   stack: Array<{
     file: string
     methodName: string
@@ -294,6 +313,7 @@ interface HmrRuntimeError {
 
 interface HmrRuntimeErrorState {
   pathname: string
+  htmlRequestId?: string | null
   errors: HmrRuntimeError[]
 }
 
@@ -309,9 +329,19 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
 
   if (
     !isRecord(message) ||
-    message.type !== 'runtime-error-state' ||
+    (message.type !== 'runtimeErrors' &&
+      message.type !== 'runtime-error-state') ||
     typeof message.pathname !== 'string' ||
     !Array.isArray(message.errors)
+  ) {
+    return null
+  }
+
+  const isLegacyMessage = message.type === 'runtime-error-state'
+  if (
+    message.htmlRequestId !== undefined &&
+    message.htmlRequestId !== null &&
+    typeof message.htmlRequestId !== 'string'
   ) {
     return null
   }
@@ -322,7 +352,9 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
       typeof error.type !== 'string' ||
       typeof error.errorName !== 'string' ||
       typeof error.message !== 'string' ||
-      typeof error.fatal !== 'boolean' ||
+      (isLegacyMessage && typeof error.fatal !== 'boolean') ||
+      (!isLegacyMessage && error.fatal !== undefined) ||
+      !isRuntimeErrorBoundary(error.boundary) ||
       !Array.isArray(error.stack)
     ) {
       return []
@@ -354,7 +386,10 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
       type: error.type,
       errorName: error.errorName,
       message: error.message,
-      fatal: error.fatal,
+      ...(typeof error.fatal === 'boolean' ? { fatal: error.fatal } : {}),
+      ...(error.boundary !== undefined
+        ? { boundary: { ...error.boundary } }
+        : {}),
       stack,
     }]
   })
@@ -365,8 +400,28 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
 
   return {
     pathname: message.pathname,
+    ...(message.htmlRequestId !== undefined
+      ? { htmlRequestId: message.htmlRequestId }
+      : {}),
     errors,
   }
+}
+
+function isRuntimeErrorBoundary(value: unknown): boolean {
+  if (value === undefined) {
+    return true
+  }
+  return (
+    isRecord(value) &&
+    (value.kind === 'default-global' ||
+      value.kind === 'custom-global' ||
+      value.kind === 'custom') &&
+    (value.name === undefined || typeof value.name === 'string')
+  )
+}
+
+function getHmrRuntimeErrorFatality(error: HmrRuntimeError) {
+  return error.fatal ?? (error.boundary?.kind === 'default-global')
 }
 
 function fromHmrRuntimeError(error: HmrRuntimeError): RuntimeErrorDraft {
@@ -384,6 +439,9 @@ function fromHmrRuntimeError(error: HmrRuntimeError): RuntimeErrorDraft {
     name: error.errorName,
     message: error.message,
     stack,
+    ...(error.boundary !== undefined
+      ? { boundary: { ...error.boundary } }
+      : {}),
     filename: firstFrame?.file,
     line: firstFrame?.line ?? undefined,
     column: firstFrame?.column ?? undefined,
@@ -492,9 +550,10 @@ function getRuntimeErrorSeverity(isFatal?: boolean): RuntimeErrorSeverity {
 function getRuntimeErrorKey(
   error: Pick<RuntimeErrorInfo, 'name' | 'message' | 'stack'> & {
     isFatal?: boolean
+    boundary?: RuntimeErrorBoundary
   }
 ) {
-  return `${error.name}\u0000${error.message}\u0000${error.stack}\u0000${String(error.isFatal)}`
+  return `${error.name}\u0000${error.message}\u0000${error.stack}\u0000${String(error.isFatal)}\u0000${JSON.stringify(error.boundary)}`
 }
 
 function getWindowPathname() {
@@ -502,6 +561,15 @@ function getWindowPathname() {
     return window.location.pathname || new URL(window.location.href).pathname
   } catch {
     return ''
+  }
+}
+
+function getWindowHmrRequestId() {
+  try {
+    const requestId = (window as typeof window & { __next_r?: unknown }).__next_r
+    return typeof requestId === 'string' ? requestId : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -522,6 +590,7 @@ function cloneRuntimeErrors(errors: RuntimeErrorInfo[]) {
 function cloneRuntimeError(error: RuntimeErrorInfo): RuntimeErrorInfo {
   return {
     ...error,
+    boundary: error.boundary ? { ...error.boundary } : undefined,
     mapped: error.mapped
       ? {
           ...error.mapped,

@@ -263,11 +263,29 @@ describe('observeRuntimeErrors', () => {
   })
 
   it.each([
-    { fatal: true, severity: 'fatal' },
-    { fatal: false, severity: 'recoverable' },
+    {
+      boundary: { kind: 'default-global', name: 'DefaultGlobalError' },
+      isFatal: true,
+      severity: 'fatal',
+    },
+    {
+      boundary: { kind: 'custom', name: 'RouteErrorBoundary' },
+      isFatal: false,
+      severity: 'recoverable',
+    },
+    {
+      boundary: { kind: 'custom-global', name: 'GlobalError' },
+      isFatal: false,
+      severity: 'recoverable',
+    },
+    {
+      boundary: undefined,
+      isFatal: false,
+      severity: 'recoverable',
+    },
   ] as const)(
-    'uses Next HMR runtime state fatality ($fatal)',
-    async ({ fatal, severity }) => {
+    'derives Next HMR runtime fatality from its boundary ($severity)',
+    async ({ boundary, isFatal, severity }) => {
       vi.useFakeTimers()
       const fakeWindow = createFakeWindow()
       const events: any[] = []
@@ -286,7 +304,7 @@ describe('observeRuntimeErrors', () => {
       expect(
         observer.handleHMRMessage(
           createHmrRuntimeState({
-            fatal,
+            boundary,
             message: browserError.message,
           })
         )
@@ -296,17 +314,70 @@ describe('observeRuntimeErrors', () => {
       expect(events[0].error).toMatchObject({
         source: 'nextjs',
         message: browserError.message,
-        isFatal: fatal,
+        isFatal,
         severity,
         filename: 'app/page.tsx',
         line: 12,
         column: 5,
       })
+      expect(events[0].error.boundary).toEqual(boundary)
 
       await vi.advanceTimersByTimeAsync(1000)
       expect(events).toHaveLength(1)
     }
   )
+
+  it('continues to accept the earlier runtime-error-state payload', () => {
+    createFakeWindow()
+    const events: any[] = []
+    const observer = observeRuntimeErrors((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    expect(
+      observer.handleHMRMessage(
+        createHmrRuntimeState(
+          { fatal: true, message: 'legacy fatal error' },
+          '/runtime-effect',
+          { legacy: true }
+        )
+      )
+    ).toBe(true)
+    expect(events[0].error).toMatchObject({
+      message: 'legacy fatal error',
+      isFatal: true,
+      severity: 'fatal',
+    })
+  })
+
+  it('ignores runtime snapshots produced by another document', () => {
+    createFakeWindow()
+    ;(window as any).__next_r = 'current-request'
+    const events: any[] = []
+    const observer = observeRuntimeErrors((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    expect(
+      observer.handleHMRMessage(
+        createHmrRuntimeState(
+          { message: 'another document' },
+          '/runtime-effect',
+          { htmlRequestId: 'other-request' }
+        )
+      )
+    ).toBe(true)
+    expect(events).toEqual([])
+
+    observer.handleHMRMessage(
+      createHmrRuntimeState(
+        { message: 'current document' },
+        '/runtime-effect',
+        { htmlRequestId: 'current-request' }
+      )
+    )
+    expect(events[0].error.message).toBe('current document')
+  })
 
   it('clears HMR runtime state and ignores state for another pathname', () => {
     createFakeWindow()
@@ -317,13 +388,13 @@ describe('observeRuntimeErrors', () => {
 
     expect(
       observer.handleHMRMessage(
-        createHmrRuntimeState({ fatal: false, message: 'other route' }, '/other')
+        createHmrRuntimeState({ message: 'other route' }, '/other')
       )
     ).toBe(true)
     expect(events).toEqual([])
 
     observer.handleHMRMessage(
-      createHmrRuntimeState({ fatal: false, message: 'current route' })
+      createHmrRuntimeState({ message: 'current route' })
     )
     observer.handleHMRMessage(createHmrRuntimeState())
 
@@ -432,12 +503,23 @@ async function waitFor(condition: () => boolean) {
 }
 
 function createHmrRuntimeState(
-  error?: { fatal: boolean; message: string },
-  pathname = '/runtime-effect'
+  error?: {
+    fatal?: boolean
+    message: string
+    boundary?: {
+      kind: 'default-global' | 'custom-global' | 'custom'
+      name?: string
+    }
+  },
+  pathname = '/runtime-effect',
+  options: { legacy?: boolean; htmlRequestId?: string } = {}
 ) {
   return JSON.stringify({
-    type: 'runtime-error-state',
+    type: options.legacy ? 'runtime-error-state' : 'runtimeErrors',
     clientId: 'client-1',
+    ...(options.htmlRequestId
+      ? { htmlRequestId: options.htmlRequestId }
+      : {}),
     pathname,
     errors: error
       ? [
@@ -445,7 +527,8 @@ function createHmrRuntimeState(
             type: 'runtime',
             errorName: 'Error',
             message: error.message,
-            fatal: error.fatal,
+            ...(options.legacy ? { fatal: error.fatal } : {}),
+            ...(error.boundary ? { boundary: error.boundary } : {}),
             stack: [
               {
                 file: 'app/page.tsx',

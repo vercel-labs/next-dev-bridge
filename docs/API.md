@@ -22,8 +22,10 @@ const observer = observeNextDev(listener, options)
 
 `observeNextDev()` is the preferred browser API. It wraps the Next HMR
 WebSocket and emits normalized build/runtime events. When Next publishes a
-`runtime-error-state` message, the bridge uses its formatted stack and `fatal`
-value. Browser error listeners remain as a fallback for older Next versions.
+`runtimeErrors` message, the bridge uses its formatted stack and boundary
+metadata. Enable `experimental.exposeRuntimeErrorsToHMR` in `next.config.js` on
+Next versions that support this opt-in. Browser error listeners remain as a
+fallback for older Next versions or when the experiment is disabled.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -183,14 +185,14 @@ runtime.reset()
 runtime.stop()
 ```
 
-Runtime errors use a separate HMR `runtime-error-state` message rather than the
+Runtime errors use a separate HMR `runtimeErrors` message rather than the
 build messages. In a Next preview iframe, prefer `observeNextDev()` when you
 need both build and runtime events.
 
 `observeRuntimeErrors()` captures `window.error` and `unhandledrejection`.
-`observeNextDev()` additionally passes incoming `runtime-error-state` HMR
-messages to this observer. Next-provided errors use `source: 'nextjs'` and carry
-the authoritative `isFatal` value.
+`observeNextDev()` additionally passes incoming `runtimeErrors` HMR messages to
+this observer. Next-provided errors use `source: 'nextjs'`, retain the optional
+`boundary` metadata, and derive `isFatal` from the boundary kind.
 
 If you own WebSocket interception yourself, enable HMR preference and forward
 the raw message to the runtime observer:
@@ -207,11 +209,13 @@ Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
 Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
 runtime errors without making source-map requests.
 
-Each error also carries a `severity` field. For Next HMR runtime state,
-`fatal: true` maps to `isFatal: true` and `severity: 'fatal'`; `fatal: false`
-maps to `isFatal: false` and `severity: 'recoverable'`. Browser fallback errors
-omit `isFatal` and remain recoverable rather than guessing whether the UI was
-replaced.
+Each error also carries a `severity` field. For Next HMR runtime state, a
+`default-global` boundary maps to `isFatal: true` and `severity: 'fatal'`.
+`custom-global`, `custom`, or an absent boundary map to `isFatal: false` and
+`severity: 'recoverable'`. Browser fallback errors omit `isFatal` and remain
+recoverable rather than guessing whether the UI was replaced. An empty HMR
+snapshot emits `runtime:cleared`, but the transport-level clear does not by
+itself confirm a successful application render.
 
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 

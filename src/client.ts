@@ -24,6 +24,7 @@ export {
 } from './runtime.js'
 export type {
   RuntimeErrorEvent,
+  RuntimeErrorBoundary,
   RuntimeErrorInfo,
   RuntimeErrorListener,
   RuntimeErrorObserver,

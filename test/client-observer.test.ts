@@ -114,7 +114,7 @@ describe('observeNextDev', () => {
 
     socket.emit('message', {
       data: JSON.stringify({
-        type: 'runtime-error-state',
+        type: 'runtimeErrors',
         clientId: 'client-1',
         pathname: '/runtime-effect',
         errors: [
@@ -122,7 +122,10 @@ describe('observeNextDev', () => {
             type: 'runtime',
             errorName: 'Error',
             message: 'root boundary exploded',
-            fatal: true,
+            boundary: {
+              kind: 'default-global',
+              name: 'DefaultGlobalError',
+            },
             stack: [
               {
                 file: 'app/runtime-effect/page.tsx',
@@ -145,6 +148,10 @@ describe('observeNextDev', () => {
           message: 'root boundary exploded',
           isFatal: true,
           severity: 'fatal',
+          boundary: {
+            kind: 'default-global',
+            name: 'DefaultGlobalError',
+          },
         },
       },
       state: {

@@ -79,12 +79,25 @@ window.addEventListener('pagehide', () => {
 })
 ```
 
-On Next.js builds that publish `runtime-error-state` over HMR, next-dev-bridge
-uses that WebSocket state as the authoritative runtime source. Errors that
-replaced the application UI carry `isFatal: true` and `severity: 'fatal'`;
-errors that left it mounted carry `isFatal: false` and
-`severity: 'recoverable'`. Older Next.js builds fall back to browser error
-events without guessing fatality.
+On Next.js builds that publish `runtimeErrors` over HMR, enable the reporting
+experiment in `next.config.js`:
+
+```js
+module.exports = {
+  experimental: {
+    exposeRuntimeErrorsToHMR: true,
+  },
+}
+```
+
+next-dev-bridge uses that source-mapped WebSocket state as the authoritative
+runtime source. Errors caught by Next's `default-global` boundary carry
+`isFatal: true` and `severity: 'fatal'`; errors caught by custom boundaries or
+reported without a boundary carry `isFatal: false` and
+`severity: 'recoverable'`. A `runtime:cleared` event means the producer's
+reported snapshot is empty; it does not by itself prove that the application
+rendered successfully. Older Next.js builds fall back to browser error events
+without guessing fatality.
 
 For iframe runtimes that already rewrite websocket URLs, keep that rewrite and
 pass it to next-dev-bridge:
