@@ -21,8 +21,8 @@ export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
   severity: RuntimeErrorSeverity
-  /** Whether this error reached Next.js' default global error boundary. */
-  isFatal?: boolean
+  /** Whether Next.js reported that this error reached its default global boundary. */
+  isFatal: boolean
   /** The React error boundary reported by Next.js, when one caught the error. */
   boundary?: RuntimeErrorBoundary
   name: string
@@ -109,6 +109,7 @@ export function observeRuntimeErrors(
     const entry: RuntimeErrorInfo = {
       ...draft,
       id: nextId++,
+      isFatal: false,
       severity: getRuntimeErrorSeverity(),
       at: timestamp(options),
     }
@@ -352,8 +353,8 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
       typeof error.type !== 'string' ||
       typeof error.errorName !== 'string' ||
       typeof error.message !== 'string' ||
+      (error.fatal !== undefined && typeof error.fatal !== 'boolean') ||
       (isLegacyMessage && typeof error.fatal !== 'boolean') ||
-      (!isLegacyMessage && error.fatal !== undefined) ||
       !isRuntimeErrorBoundary(error.boundary) ||
       !Array.isArray(error.stack)
     ) {
@@ -673,6 +674,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     const entry = {
       ...draft,
       id: nextId++,
+      isFatal: false,
       severity: getRuntimeErrorSeverity(),
       at: new Date().toISOString(),
     } as RuntimeErrorInfo

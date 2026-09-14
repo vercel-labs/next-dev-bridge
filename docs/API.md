@@ -23,9 +23,10 @@ const observer = observeNextDev(listener, options)
 `observeNextDev()` is the preferred browser API. It wraps the Next HMR
 WebSocket and emits normalized build/runtime events. When Next publishes a
 `runtimeErrors` message, the bridge uses its formatted stack and boundary
-metadata. Enable `experimental.exposeRuntimeErrorsToHMR` in `next.config.js` on
-Next versions that support this opt-in. Browser error listeners remain as a
-fallback for older Next versions or when the experiment is disabled.
+metadata. Starting with Next.js `16.4.0-canary.30`, start the dev server with
+`__NEXT_EXPOSE_RUNTIME_ERRORS_TO_HMR=1` to enable this opt-in. Browser error
+listeners remain as a fallback for older Next versions or when the flag is
+disabled.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -209,13 +210,13 @@ Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
 Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
 runtime errors without making source-map requests.
 
-Each error also carries a `severity` field. For Next HMR runtime state, a
-`default-global` boundary maps to `isFatal: true` and `severity: 'fatal'`.
-`custom-global`, `custom`, or an absent boundary map to `isFatal: false` and
-`severity: 'recoverable'`. Browser fallback errors omit `isFatal` and remain
-recoverable rather than guessing whether the UI was replaced. An empty HMR
-snapshot emits `runtime:cleared`, but the transport-level clear does not by
-itself confirm a successful application render.
+Each error also carries a `severity` field. For Next HMR runtime state, the
+reported `fatal` boolean maps directly to `isFatal` and to either
+`severity: 'fatal'` or `severity: 'recoverable'`; boundary metadata is preserved
+when present. Browser fallback errors use `isFatal: false` because older Next
+versions do not expose whether the UI was replaced. An empty HMR snapshot emits
+`runtime:cleared`, but the transport-level clear does not by itself confirm a
+successful application render.
 
 For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
 

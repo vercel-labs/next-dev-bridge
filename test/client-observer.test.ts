@@ -104,8 +104,9 @@ describe('observeNextDev', () => {
     expect(events[0].state.runtime.errors).toHaveLength(1)
   })
 
-  it('emits fatal runtime errors from the Next HMR websocket', () => {
+  it('consumes and clears Next 16.4 runtimeErrors websocket snapshots', () => {
     const fakeWindow = createFakeWindow()
+    ;(fakeWindow as any).__next_r = 'request-1'
     const events: any[] = []
     observeNextDev((event, state) => events.push({ event, state }), {
       now: () => '2026-09-02T10:00:00.000Z',
@@ -117,11 +118,13 @@ describe('observeNextDev', () => {
         type: 'runtimeErrors',
         clientId: 'client-1',
         pathname: '/runtime-effect',
+        htmlRequestId: 'request-1',
         errors: [
           {
             type: 'runtime',
             errorName: 'Error',
             message: 'root boundary exploded',
+            fatal: true,
             boundary: {
               kind: 'default-global',
               name: 'DefaultGlobalError',
@@ -160,6 +163,21 @@ describe('observeNextDev', () => {
         },
       },
     })
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'runtimeErrors',
+        clientId: 'client-1',
+        pathname: '/runtime-effect',
+        htmlRequestId: 'request-1',
+        errors: [],
+      }),
+    })
+
+    expect(events.at(-1)).toMatchObject({
+      event: { type: 'runtime:cleared', errors: [] },
+      state: { runtime: { errors: [] } },
+    })
   })
 
   it('falls back to browser runtime errors without HMR runtime state', async () => {
@@ -192,6 +210,7 @@ describe('observeNextDev', () => {
         error: {
           source: 'error',
           message: error.message,
+          isFatal: false,
           severity: 'recoverable',
         },
       },
@@ -201,7 +220,7 @@ describe('observeNextDev', () => {
         },
       },
     })
-    expect(events[0].event.error.isFatal).toBeUndefined()
+    expect(events[0].event.error.isFatal).toBe(false)
   })
 })
 

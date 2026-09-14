@@ -59,6 +59,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'error',
+        isFatal: false,
         severity: 'recoverable',
         name: 'Error',
         message: 'effect exploded',
@@ -182,6 +183,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'unhandledrejection',
+        isFatal: false,
         severity: 'recoverable',
         message: 'promise exploded',
       },
@@ -191,6 +193,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 2,
         source: 'unhandledrejection',
+        isFatal: false,
         severity: 'recoverable',
         message: 'promise exploded',
       },
@@ -224,6 +227,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'error',
+        isFatal: false,
         severity: 'recoverable',
         name: 'Error',
         message: 'boundary exploded',
@@ -284,7 +288,7 @@ describe('observeRuntimeErrors', () => {
       severity: 'recoverable',
     },
   ] as const)(
-    'derives Next HMR runtime fatality from its boundary ($severity)',
+    'uses Next HMR runtime fatality ($severity)',
     async ({ boundary, isFatal, severity }) => {
       vi.useFakeTimers()
       const fakeWindow = createFakeWindow()
@@ -304,6 +308,7 @@ describe('observeRuntimeErrors', () => {
       expect(
         observer.handleHMRMessage(
           createHmrRuntimeState({
+            fatal: isFatal,
             boundary,
             message: browserError.message,
           })
@@ -527,7 +532,7 @@ function createHmrRuntimeState(
             type: 'runtime',
             errorName: 'Error',
             message: error.message,
-            ...(options.legacy ? { fatal: error.fatal } : {}),
+            ...(error.fatal !== undefined ? { fatal: error.fatal } : {}),
             ...(error.boundary ? { boundary: error.boundary } : {}),
             stack: [
               {
