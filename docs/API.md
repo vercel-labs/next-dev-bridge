@@ -23,10 +23,8 @@ const observer = observeNextDev(listener, options)
 `observeNextDev()` is the preferred browser API. It wraps the Next HMR
 WebSocket and emits normalized build/runtime events. When Next publishes a
 `runtimeErrors` message, the bridge uses its formatted stack and boundary
-metadata. Starting with Next.js `16.4.0-canary.30`, start the dev server with
-`__NEXT_EXPOSE_RUNTIME_ERRORS_TO_HMR=1` to enable this opt-in. Browser error
-listeners remain as a fallback for older Next versions or when the flag is
-disabled.
+metadata. Browser error listeners remain as a fallback for Next versions that
+do not publish this message.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
