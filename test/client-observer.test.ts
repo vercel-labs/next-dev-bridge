@@ -27,13 +27,16 @@ describe('observeNextDev', () => {
         }),
       })
 
-      expect(events).toHaveLength(1)
-      expect(events[0].event).toMatchObject({
+      expect(events.map(({ event }) => event.type)).toEqual([
+        'session:connecting',
+        'build:error',
+      ])
+      expect(events[1].event).toMatchObject({
         type: 'build:error',
         hash: 'error-hash',
       })
-      expect(events[0].state.build.hasErrors).toBe(true)
-      expect(events[0].state.runtime.errors).toEqual([])
+      expect(events[1].state.build.hasErrors).toBe(true)
+      expect(events[1].state.runtime.errors).toEqual([])
 
       observer.stop()
       expect(fakeWindow.WebSocket).toBe(fakeWindow.NativeWebSocket)
@@ -142,8 +145,11 @@ describe('observeNextDev', () => {
       }),
     })
 
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({
+    expect(events.map(({ event }) => event.type)).toEqual([
+      'session:connecting',
+      'runtime:error',
+    ])
+    expect(events[1]).toMatchObject({
       event: {
         type: 'runtime:error',
         error: {
@@ -178,6 +184,76 @@ describe('observeNextDev', () => {
       event: { type: 'runtime:cleared', errors: [] },
       state: { runtime: { errors: [] } },
     })
+  })
+
+  it('reports the lifecycle of the intercepted HMR connection', () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const observer = observeNextDev((event, state) =>
+      events.push({ event, connection: state.build.connection })
+    )
+
+    const first = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+    first.emit('open', {})
+    first.emit('close', {
+      code: 1006,
+      reason: '',
+      wasClean: false,
+    })
+
+    fakeWindow.emit('offline', {})
+    const second = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+    second.emit('open', {})
+
+    expect(events).toEqual([
+      {
+        event: {
+          type: 'session:connecting',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+        },
+        connection: 'connecting',
+      },
+      {
+        event: {
+          type: 'session:connected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+        },
+        connection: 'connected',
+      },
+      {
+        event: {
+          type: 'session:disconnected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+          opened: true,
+          code: 1006,
+          reason: '',
+          wasClean: false,
+        },
+        connection: 'disconnected',
+      },
+      {
+        event: {
+          type: 'session:connecting',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 2,
+        },
+        connection: 'connecting',
+      },
+      {
+        event: {
+          type: 'session:reconnected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 2,
+          missedUpdates: true,
+        },
+        connection: 'connected',
+      },
+    ])
+
+    observer.stop()
   })
 
   it('falls back to browser runtime errors without HMR runtime state', async () => {

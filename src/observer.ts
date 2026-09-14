@@ -10,7 +10,6 @@ import {
 import {
   createHmrRuntimeErrorObserver,
   type RuntimeErrorEvent,
-  type RuntimeErrorObserver,
 } from './runtime.js'
 import {
   DEFAULT_DEV_SERVER_URL,
@@ -103,7 +102,7 @@ export function connect(
 class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnection {
   private options: Required<ObserverOptions>
   private processHMR: ProcessHMR
-  private runtime: RuntimeErrorObserver
+  private runtime: ReturnType<typeof createHmrRuntimeErrorObserver>
   private connection: NextDevBridgeState['connection']
   private reconnectAttempt: number
   private closed: boolean
@@ -182,7 +181,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     })
 
     socket.on('message', (message) => {
-      this.runtime.handleHMRMessage(message)
+      this.runtime.ingestHMR(message)
       this.processHMR(message, (event) => this.emitEvent(event))
     })
 

@@ -56,8 +56,6 @@ export type RuntimeErrorListener = (
 ) => void
 
 export interface RuntimeErrorObserverOptions {
-  /** Prefer Next's HMR runtime state, with browser events as a fallback. */
-  preferHMR?: boolean
   now?: () => Date | number | string
   sourceMap?: SourceMapOptions | false
 }
@@ -76,7 +74,15 @@ export interface RuntimeErrorObserver {
   stop(): void
   reset(): RuntimeErrorState
   getSnapshot(): RuntimeErrorState
-  handleHMRMessage(raw: unknown): boolean
+}
+
+interface HmrRuntimeErrorObserver extends RuntimeErrorObserver {
+  ingestHMR(raw: unknown): void
+}
+
+interface InternalRuntimeErrorObserverOptions
+  extends RuntimeErrorObserverOptions {
+  preferHMR?: boolean
 }
 
 interface RuntimeErrorDraft {
@@ -94,6 +100,13 @@ export function observeRuntimeErrors(
   listener?: RuntimeErrorListener,
   options: RuntimeErrorObserverOptions = {}
 ): RuntimeErrorObserver {
+  return createRuntimeErrorObserver(listener, options)
+}
+
+export function createRuntimeErrorObserver(
+  listener?: RuntimeErrorListener,
+  options: InternalRuntimeErrorObserverOptions = {}
+): HmrRuntimeErrorObserver {
   if (typeof window === 'undefined') {
     return createNoopRuntimeObserver()
   }
@@ -158,14 +171,14 @@ export function observeRuntimeErrors(
     getSnapshot() {
       return cloneRuntimeState(state)
     },
-    handleHMRMessage(raw) {
+    ingestHMR(raw) {
       const message = parseHmrRuntimeErrorState(raw)
       if (!message) {
-        return false
+        return
       }
 
       if (message.pathname !== getWindowPathname()) {
-        return true
+        return
       }
 
       const requestId = getWindowHmrRequestId()
@@ -174,13 +187,12 @@ export function observeRuntimeErrors(
         requestId !== undefined &&
         message.htmlRequestId !== requestId
       ) {
-        return true
+        return
       }
 
       browserFallbackActive = false
       clearPendingBrowserErrors()
       replaceWithHmrRuntimeState(message.errors)
-      return true
     },
   }
 
@@ -282,7 +294,7 @@ export function createRuntimeErrorObserverScript(
   )});`
 }
 
-function createNoopRuntimeObserver(): RuntimeErrorObserver {
+function createNoopRuntimeObserver(): HmrRuntimeErrorObserver {
   const emptyState = { errors: [] }
   return {
     stop() {},
@@ -292,9 +304,7 @@ function createNoopRuntimeObserver(): RuntimeErrorObserver {
     getSnapshot() {
       return emptyState
     },
-    handleHMRMessage() {
-      return false
-    },
+    ingestHMR() {},
   }
 }
 
@@ -328,7 +338,7 @@ interface HmrRuntimeErrorState {
 export function createHmrRuntimeErrorObserver(
   listener?: RuntimeErrorListener,
   options: Pick<RuntimeErrorObserverOptions, 'now'> = {}
-): RuntimeErrorObserver {
+): HmrRuntimeErrorObserver {
   const state: RuntimeErrorState = { errors: [] }
   const errorsByScope = new Map<string, RuntimeErrorInfo[]>()
   let nextId = 1
@@ -344,10 +354,10 @@ export function createHmrRuntimeErrorObserver(
     getSnapshot() {
       return cloneRuntimeState(state)
     },
-    handleHMRMessage(raw) {
+    ingestHMR(raw) {
       const message = parseHmrRuntimeErrorState(raw)
       if (!message) {
-        return false
+        return
       }
 
       const scope = getHmrRuntimeErrorScope(message)
@@ -384,7 +394,7 @@ export function createHmrRuntimeErrorObserver(
         if (previousAggregate.length > 0) {
           emit({ type: 'runtime:cleared', errors: [] })
         }
-        return true
+        return
       }
 
       for (const error of nextScopeErrors) {
@@ -396,7 +406,6 @@ export function createHmrRuntimeErrorObserver(
           })
         }
       }
-      return true
     },
   }
 

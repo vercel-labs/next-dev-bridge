@@ -3,6 +3,7 @@ export type {
   NextDevBridgeClientEvent,
   NextDevBridgeClientEventListener,
   NextDevBridgeClientObserver,
+  NextDevBridgeClientSessionEvent,
   NextDevBridgeClientState,
   ObserveNextDevOptions,
 } from './client-observer.js'

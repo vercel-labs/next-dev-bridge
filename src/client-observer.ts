@@ -4,14 +4,36 @@ import {
   type ProcessHMREvent,
 } from './processor.js'
 import {
-  observeRuntimeErrors,
+  createRuntimeErrorObserver,
   type RuntimeErrorEvent,
   type RuntimeErrorObserver,
   type RuntimeErrorObserverOptions,
   type RuntimeErrorState,
 } from './runtime.js'
 
-export type NextDevBridgeClientEvent = ProcessHMREvent | RuntimeErrorEvent
+export type NextDevBridgeClientSessionEvent =
+  | { type: 'session:connecting'; url: string; attempt: number }
+  | { type: 'session:connected'; url: string; attempt: number }
+  | {
+      type: 'session:reconnected'
+      url: string
+      attempt: number
+      missedUpdates: boolean
+    }
+  | {
+      type: 'session:disconnected'
+      url: string
+      attempt: number
+      opened: boolean
+      code: number
+      reason: string
+      wasClean: boolean
+    }
+
+export type NextDevBridgeClientEvent =
+  | ProcessHMREvent
+  | RuntimeErrorEvent
+  | NextDevBridgeClientSessionEvent
 
 export interface NextDevBridgeClientState {
   build: NextDevBridgeState
@@ -41,12 +63,13 @@ export function observeNextDev(
   listener: NextDevBridgeClientEventListener,
   options: ObserveNextDevOptions = {}
 ): NextDevBridgeClientObserver {
+  let connection: NextDevBridgeState['connection'] = 'idle'
   const handleHMR = processHMR({
     now: options.now,
     raw: options.raw,
     verbose: options.verbose,
   })
-  const runtime = observeRuntimeErrors(
+  const runtime = createRuntimeErrorObserver(
     (event) => {
       emit(event)
     },
@@ -70,6 +93,16 @@ export function observeNextDev(
     '__webpack_hmr',
   ]
   let stopped = false
+  let hmrAttempt = 0
+  let hmrHasConnected = false
+  let networkChangedSinceClose = false
+
+  function markNetworkChanged() {
+    networkChangedSinceClose = true
+  }
+
+  window.addEventListener('offline', markNetworkChanged)
+  window.addEventListener('online', markNetworkChanged)
 
   function emit(event: NextDevBridgeClientEvent) {
     if (!stopped) {
@@ -78,8 +111,10 @@ export function observeNextDev(
   }
 
   function getSnapshot(): NextDevBridgeClientState {
+    const build = handleHMR.getSnapshot()
+    build.connection = connection
     return {
-      build: handleHMR.getSnapshot(),
+      build,
       runtime: runtime.getSnapshot(),
     }
   }
@@ -101,16 +136,54 @@ export function observeNextDev(
         : new NativeWebSocket(rewrittenURL, protocols)
 
     if (isNextHMRSocket(originalURL) || isNextHMRSocket(String(rewrittenURL))) {
+      hmrAttempt += 1
+      const attempt = hmrAttempt
+      const url = String(rewrittenURL)
+      let opened = false
+
+      connection = 'connecting'
+      emit({ type: 'session:connecting', url, attempt })
+      socket.addEventListener('open', () => {
+        opened = true
+        connection = 'connected'
+        if (hmrHasConnected) {
+          emit({
+            type: 'session:reconnected',
+            url,
+            attempt,
+            missedUpdates: networkChangedSinceClose,
+          })
+        } else {
+          hmrHasConnected = true
+          emit({ type: 'session:connected', url, attempt })
+        }
+        networkChangedSinceClose = false
+      })
       socket.addEventListener('message', (message) => {
         if (typeof message.data !== 'string') {
           return
         }
 
-        runtime.handleHMRMessage(message.data)
+        runtime.ingestHMR(message.data)
         const { events } = handleHMR(message.data)
         for (const event of events) {
           emit(event)
         }
+      })
+      socket.addEventListener('close', (event) => {
+        connection = 'disconnected'
+        if (opened && typeof navigator !== 'undefined' && !navigator.onLine) {
+          networkChangedSinceClose = true
+        }
+        emit({
+          type: 'session:disconnected',
+          url,
+          attempt,
+          opened,
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        })
       })
     }
 
@@ -123,6 +196,8 @@ export function observeNextDev(
 
   return createClientObserver(handleHMR, runtime, () => {
     stopped = true
+    window.removeEventListener('offline', markNetworkChanged)
+    window.removeEventListener('online', markNetworkChanged)
     if (window.WebSocket === (NextDevBridgeWebSocket as unknown as typeof WebSocket)) {
       window.WebSocket = NativeWebSocket
     }

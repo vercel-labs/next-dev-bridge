@@ -52,9 +52,8 @@ connect-next http://localhost:3000 --no-reconnect
 
 ## Browser API
 
-Use `observeNextDev()` inside the preview page or iframe when you need browser
-runtime fallback for Next.js versions that do not publish runtime state over
-HMR.
+Use `observeNextDev()` inside the preview page or iframe for one normalized
+connection, build, and runtime event stream.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -166,6 +165,7 @@ process.once('SIGINT', () => {
 Common events:
 
 ```ts
+'build:started'
 'build:ready'
 'build:error'
 'build:recovered'
@@ -175,6 +175,7 @@ Common events:
 'session:connecting'
 'session:connected'
 'session:disconnected'
+'session:reconnected'
 'session:error'
 ```
 

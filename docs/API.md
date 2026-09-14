@@ -9,10 +9,10 @@ import { connect } from 'next-dev-bridge'
 ```
 
 Use `observeNextDev()` from `next-dev-bridge/client` inside the preview browser
-or iframe when browser runtime fallback is required. Use the CLI for a quick
-terminal view. Use `connect()` from `next-dev-bridge` in Node when another
-process needs to attach to a running Next dev server; it automatically consumes
-runtime state when Next.js publishes it.
+or iframe. It provides one event stream for connection, build, and runtime
+state, including a browser fallback for older Next.js releases. Use the CLI for
+a quick terminal view. Use `connect()` from `next-dev-bridge` in Node when
+another process needs to attach to a running Next dev server.
 
 ## observeNextDev
 
@@ -20,11 +20,11 @@ runtime state when Next.js publishes it.
 const observer = observeNextDev(listener, options)
 ```
 
-`observeNextDev()` is the preferred browser API. It wraps the Next HMR
-WebSocket and emits normalized build/runtime events. When Next publishes a
-`runtimeErrors` message, the bridge uses its formatted stack and boundary
-metadata. Browser error listeners remain as a fallback for Next versions that
-do not publish this message.
+`observeNextDev()` is the preferred browser API. It wraps the existing Next HMR
+WebSocket and emits normalized connection, build, and runtime events. When Next
+publishes a `runtimeErrors` message, the bridge uses its formatted stack and
+boundary metadata. Browser error listeners remain as an automatic fallback for
+Next versions that do not publish this message.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -70,9 +70,11 @@ observeNextDev(listener, {
 })
 ```
 
-## v0 Frame Runtime
+## Iframe integration
 
-For the v0 frame runtime, keep the existing websocket URL rewrite and parent `postMessage` shape. Let `observeNextDev()` own HMR message processing and browser runtime error capture.
+An iframe shell can forward normalized events and state to its parent while
+letting `observeNextDev()` own HMR message processing, connection observation,
+and browser runtime error capture.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -84,13 +86,13 @@ interface FrameObserverOptions {
   sendToParent?: (message: ParentMessage) => void
 }
 
-export function installNextDevBridgeFrameObserver(
+export function installFrameObserver(
   options: FrameObserverOptions = {}
 ) {
   const sendToParent =
     options.sendToParent ||
     ((message) => {
-      window.parent.postMessage({ __v0_remote__: 1, ...message }, '*')
+      window.parent.postMessage(message, '*')
     })
 
   return observeNextDev(
@@ -100,15 +102,6 @@ export function installNextDevBridgeFrameObserver(
         event,
         state,
       })
-
-      // Optional compatibility bridge for an existing v0 parent listener.
-      if (event.type === 'build:error') {
-        sendToParent({ type: 'hmr_state', state: 'built', hasErrors: true })
-      }
-
-      if (event.type === 'build:ready' || event.type === 'build:recovered') {
-        sendToParent({ type: 'hmr_state', state: 'built', hasErrors: false })
-      }
     },
     {
       rewriteWebSocketURL: options.rewriteWebSocketURL,
@@ -116,8 +109,6 @@ export function installNextDevBridgeFrameObserver(
   )
 }
 ```
-
-In the v0 repo, this replaces the manual `hmr_state` JSON parsing inside the `WebSocket` patch. If the frame runtime already rewrites websocket URLs for a sandbox host, pass that rewrite as `rewriteWebSocketURL`.
 
 ## processHMR
 
@@ -189,20 +180,9 @@ build messages. In a Next preview iframe, prefer `observeNextDev()` when you
 need both build and runtime events.
 
 `observeRuntimeErrors()` captures `window.error` and `unhandledrejection`.
-`observeNextDev()` additionally passes incoming `runtimeErrors` HMR messages to
-this observer. Next-provided errors use `source: 'nextjs'`, retain the optional
-`boundary` metadata, and map Next's reported `fatal` value to `isFatal`.
-
-If you own WebSocket interception yourself, enable HMR preference and forward
-the raw message to the runtime observer:
-
-```ts
-const runtime = observeRuntimeErrors(listener, { preferHMR: true })
-
-ws.addEventListener('message', (event) => {
-  runtime.handleHMRMessage(event.data)
-})
-```
+`observeNextDev()` combines that fallback with incoming `runtimeErrors` HMR
+messages. Next-provided errors use `source: 'nextjs'`, retain optional boundary
+metadata, and map Next's reported `fatal` value to `isFatal`.
 
 Source mapping is opt-in. Pass `sourceMap` to send captured stack frames to
 Next.js for decoding. Omit `sourceMap`, or pass `sourceMap: false`, to capture
@@ -216,7 +196,8 @@ versions do not expose whether the UI was replaced. An empty HMR snapshot emits
 `runtime:cleared`, but the transport-level clear does not by itself confirm a
 successful application render.
 
-For v0-style iframe injection where you need a plain script instead of a React component or bundled client module, use `createRuntimeErrorObserverScript()`:
+For iframe injection where you need a plain script instead of a bundled client
+module, use `createRuntimeErrorObserverScript()`:
 
 ```ts
 import { createRuntimeErrorObserverScript } from 'next-dev-bridge/client'
@@ -327,6 +308,7 @@ process.once('SIGINT', () => {
 Common event types:
 
 ```ts
+'build:started'
 'build:ready'
 'build:error'
 'build:recovered'
@@ -336,17 +318,18 @@ Common event types:
 'session:connecting'
 'session:connected'
 'session:disconnected'
+'session:reconnected'
 'session:error'
 ```
 
-`observeNextDev()` emits build, observer, and runtime events. `processHMR()` only
-emits build and observer events. `connect()` emits session and build events, and
-also runtime events whenever they are present on the Next.js HMR stream.
+`observeNextDev()` emits connection, build, observer, and runtime events.
+`processHMR()` emits build and observer events. `connect()` emits session and
+build events, and also runtime events whenever they are present on the Next.js
+HMR stream.
 
-Next's raw `building` signal is intentionally not emitted as a public event
-because it is low-level and can fire for route/request work, not only meaningful
-source changes. It still updates `state.phase` to `compiling` until the next
-settled build message arrives.
+Next's `building` signal becomes `build:started`. It can represent route or
+request work in addition to source edits, so consumers should use it as a
+compilation-state transition rather than proof that a file changed.
 
 Build settled events expose readable message arrays:
 

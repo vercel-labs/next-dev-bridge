@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createHmrRuntimeErrorObserver,
+  createRuntimeErrorObserver,
   createRuntimeErrorObserverScript,
   observeRuntimeErrors,
 } from '../src/runtime'
@@ -294,7 +295,7 @@ describe('observeRuntimeErrors', () => {
       vi.useFakeTimers()
       const fakeWindow = createFakeWindow()
       const events: any[] = []
-      const observer = observeRuntimeErrors((event) => events.push(event), {
+      const observer = createRuntimeErrorObserver((event) => events.push(event), {
         now: () => '2026-09-02T10:00:00.000Z',
         preferHMR: true,
       })
@@ -306,15 +307,13 @@ describe('observeRuntimeErrors', () => {
       })
       expect(events).toEqual([])
 
-      expect(
-        observer.handleHMRMessage(
-          createHmrRuntimeState({
-            fatal: isFatal,
-            boundary,
-            message: browserError.message,
-          })
-        )
-      ).toBe(true)
+      observer.ingestHMR(
+        createHmrRuntimeState({
+          fatal: isFatal,
+          boundary,
+          message: browserError.message,
+        })
+      )
 
       expect(events).toHaveLength(1)
       expect(events[0].error).toMatchObject({
@@ -336,19 +335,17 @@ describe('observeRuntimeErrors', () => {
   it('continues to accept the earlier runtime-error-state payload', () => {
     createFakeWindow()
     const events: any[] = []
-    const observer = observeRuntimeErrors((event) => events.push(event), {
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
       preferHMR: true,
     })
 
-    expect(
-      observer.handleHMRMessage(
-        createHmrRuntimeState(
-          { fatal: true, message: 'legacy fatal error' },
-          '/runtime-effect',
-          { legacy: true }
-        )
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { fatal: true, message: 'legacy fatal error' },
+        '/runtime-effect',
+        { legacy: true }
       )
-    ).toBe(true)
+    )
     expect(events[0].error).toMatchObject({
       message: 'legacy fatal error',
       isFatal: true,
@@ -360,22 +357,20 @@ describe('observeRuntimeErrors', () => {
     createFakeWindow()
     ;(window as any).__next_r = 'current-request'
     const events: any[] = []
-    const observer = observeRuntimeErrors((event) => events.push(event), {
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
       preferHMR: true,
     })
 
-    expect(
-      observer.handleHMRMessage(
-        createHmrRuntimeState(
-          { message: 'another document' },
-          '/runtime-effect',
-          { htmlRequestId: 'other-request' }
-        )
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { message: 'another document' },
+        '/runtime-effect',
+        { htmlRequestId: 'other-request' }
       )
-    ).toBe(true)
+    )
     expect(events).toEqual([])
 
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState(
         { message: 'current document' },
         '/runtime-effect',
@@ -388,28 +383,27 @@ describe('observeRuntimeErrors', () => {
   it('clears HMR runtime state and ignores state for another pathname', () => {
     createFakeWindow()
     const events: any[] = []
-    const observer = observeRuntimeErrors((event) => events.push(event), {
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
       preferHMR: true,
     })
 
-    expect(
-      observer.handleHMRMessage(
-        createHmrRuntimeState({ message: 'other route' }, '/other')
-      )
-    ).toBe(true)
+    observer.ingestHMR(
+      createHmrRuntimeState({ message: 'other route' }, '/other')
+    )
     expect(events).toEqual([])
 
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState({ message: 'current route' })
     )
-    observer.handleHMRMessage(createHmrRuntimeState())
+    observer.ingestHMR(createHmrRuntimeState())
 
     expect(events.map((event) => event.type)).toEqual([
       'runtime:error',
       'runtime:cleared',
     ])
     expect(observer.getSnapshot()).toEqual({ errors: [] })
-    expect(observer.handleHMRMessage('{invalid')).toBe(false)
+    observer.ingestHMR('{invalid')
+    expect(observer.getSnapshot()).toEqual({ errors: [] })
   })
 
   it('can reset and stop listening', async () => {
@@ -469,20 +463,18 @@ describe('createHmrRuntimeErrorObserver', () => {
       events.push({ event, state })
     })
 
-    expect(
-      observer.handleHMRMessage(
-        JSON.stringify({ type: 'sync', errors: [], warnings: [] })
-      )
-    ).toBe(false)
+    observer.ingestHMR(
+      JSON.stringify({ type: 'sync', errors: [], warnings: [] })
+    )
 
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState(
         { fatal: false, message: 'first document error' },
         '/first',
         { clientId: 'client-1' }
       )
     )
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState(
         { fatal: true, message: 'second document error' },
         '/second',
@@ -496,7 +488,7 @@ describe('createHmrRuntimeErrorObserver', () => {
       'runtime:error',
     ])
 
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState(undefined, '/first', { clientId: 'client-1' })
     )
 
@@ -505,7 +497,7 @@ describe('createHmrRuntimeErrorObserver', () => {
     ])
     expect(events).toHaveLength(2)
 
-    observer.handleHMRMessage(
+    observer.ingestHMR(
       createHmrRuntimeState(undefined, '/second', { clientId: 'client-2' })
     )
 

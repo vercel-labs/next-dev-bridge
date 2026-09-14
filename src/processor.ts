@@ -33,10 +33,17 @@ export type ProcessHMREvent =
       raw?: string
       error: SerializedError
     }
+  | BuildStartedEvent
   | BuildReadyEvent
   | BuildRecoveredEvent
   | BuildErrorEvent
   | InternalHmrMessageEvent
+
+interface BuildStartedEvent {
+  type: 'build:started'
+  internalType: 'building'
+  cycle: number
+}
 
 interface BuildReadyEvent extends BuildSettledEvent {
   type: 'build:ready'
@@ -170,6 +177,11 @@ function reduceHmrMessage(
       state.building = true
       state.buildCycle += 1
       state.lastChangedAt = changedAt
+      emit({
+        type: 'build:started',
+        internalType: HMR_TYPES.BUILDING,
+        cycle: state.buildCycle,
+      })
       return
     }
 
