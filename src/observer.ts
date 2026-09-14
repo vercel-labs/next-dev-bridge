@@ -8,6 +8,11 @@ import {
   type ProcessHMR,
 } from './processor.js'
 import {
+  createHmrRuntimeErrorObserver,
+  type RuntimeErrorEvent,
+  type RuntimeErrorObserver,
+} from './runtime.js'
+import {
   DEFAULT_DEV_SERVER_URL,
   HMR_PATHS,
   buildHmrUrl,
@@ -40,6 +45,7 @@ export type NextDevBridgeEvent =
   | { type: 'session:reconnecting'; attempt: number; delayMs: number }
   | { type: 'session:reconnect-abandoned'; attempts: number }
   | { type: 'session:error'; error: SerializedError }
+  | RuntimeErrorEvent
   | ProcessHMREvent
   | InternalBinaryMessageEvent
 
@@ -97,6 +103,7 @@ export function connect(
 class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnection {
   private options: Required<ObserverOptions>
   private processHMR: ProcessHMR
+  private runtime: RuntimeErrorObserver
   private connection: NextDevBridgeState['connection']
   private reconnectAttempt: number
   private closed: boolean
@@ -116,6 +123,9 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     this.processHMR = processHMR({
       verbose: this.options.verbose,
       raw: this.options.raw,
+    })
+    this.runtime = createHmrRuntimeErrorObserver((event) => {
+      this.emitEvent(event)
     })
     this.connection = 'idle'
     this.reconnectAttempt = 0
@@ -172,6 +182,7 @@ class NextHmrObserverImpl extends EventEmitter implements NextDevBridgeConnectio
     })
 
     socket.on('message', (message) => {
+      this.runtime.handleHMRMessage(message)
       this.processHMR(message, (event) => this.emitEvent(event))
     })
 

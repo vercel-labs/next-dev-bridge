@@ -7,3 +7,10 @@ export type {
   NextDevBridgeEvent,
   NextDevBridgeEventListener,
 } from './observer.js'
+export type {
+  RuntimeErrorBoundary,
+  RuntimeErrorEvent,
+  RuntimeErrorInfo,
+  RuntimeErrorSeverity,
+  RuntimeErrorState,
+} from './runtime.js'

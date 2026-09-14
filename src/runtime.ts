@@ -313,9 +313,96 @@ interface HmrRuntimeError {
 }
 
 interface HmrRuntimeErrorState {
+  clientId?: string
   pathname: string
   htmlRequestId?: string | null
   errors: HmrRuntimeError[]
+}
+
+/**
+ * Observe runtime snapshots already published by Next.js over HMR.
+ *
+ * This has no browser dependency, so the Node connection can consume newer
+ * runtime messages while older Next.js versions continue to be build-only.
+ */
+export function createHmrRuntimeErrorObserver(
+  listener?: RuntimeErrorListener,
+  options: Pick<RuntimeErrorObserverOptions, 'now'> = {}
+): RuntimeErrorObserver {
+  const state: RuntimeErrorState = { errors: [] }
+  const errorsByScope = new Map<string, RuntimeErrorInfo[]>()
+  let nextId = 1
+
+  return {
+    stop() {},
+    reset() {
+      errorsByScope.clear()
+      state.errors = []
+      emit({ type: 'runtime:cleared', errors: [] })
+      return cloneRuntimeState(state)
+    },
+    getSnapshot() {
+      return cloneRuntimeState(state)
+    },
+    handleHMRMessage(raw) {
+      const message = parseHmrRuntimeErrorState(raw)
+      if (!message) {
+        return false
+      }
+
+      const scope = getHmrRuntimeErrorScope(message)
+      const previousErrors = errorsByScope.get(scope) || []
+      const previousByKey = new Map(
+        previousErrors.map((error) => [getRuntimeErrorKey(error), error])
+      )
+      const nextScopeErrors = message.errors.map((error) => {
+        const draft = fromHmrRuntimeError(error)
+        const isFatal = getHmrRuntimeErrorFatality(error)
+        const key = getRuntimeErrorKey({ ...draft, isFatal })
+        return previousByKey.get(key) || {
+          ...draft,
+          id: nextId++,
+          isFatal,
+          severity: getRuntimeErrorSeverity(isFatal),
+          at: timestamp(options),
+        }
+      })
+
+      if (nextScopeErrors.length > 0) {
+        errorsByScope.set(scope, nextScopeErrors)
+      } else {
+        errorsByScope.delete(scope)
+      }
+
+      const previousAggregate = state.errors
+      const previousScopedKeys = new Set(
+        previousErrors.map((error) => getRuntimeErrorKey(error))
+      )
+      state.errors = [...errorsByScope.values()].flat()
+
+      if (state.errors.length === 0) {
+        if (previousAggregate.length > 0) {
+          emit({ type: 'runtime:cleared', errors: [] })
+        }
+        return true
+      }
+
+      for (const error of nextScopeErrors) {
+        if (!previousScopedKeys.has(getRuntimeErrorKey(error))) {
+          emit({
+            type: 'runtime:error',
+            error: cloneRuntimeError(error),
+            errors: cloneRuntimeErrors(state.errors),
+          })
+        }
+      }
+      return true
+    },
+  }
+
+  function emit(event: RuntimeErrorEvent) {
+    listener?.(event, cloneRuntimeState(state))
+  }
 }
 
 function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
@@ -344,6 +431,9 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
     message.htmlRequestId !== null &&
     typeof message.htmlRequestId !== 'string'
   ) {
+    return null
+  }
+  if (message.clientId !== undefined && typeof message.clientId !== 'string') {
     return null
   }
 
@@ -400,12 +490,25 @@ function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
   }
 
   return {
+    ...(typeof message.clientId === 'string'
+      ? { clientId: message.clientId }
+      : {}),
     pathname: message.pathname,
     ...(message.htmlRequestId !== undefined
       ? { htmlRequestId: message.htmlRequestId }
       : {}),
     errors,
   }
+}
+
+function getHmrRuntimeErrorScope(message: HmrRuntimeErrorState) {
+  if (message.clientId) {
+    return `client:${message.clientId}`
+  }
+  if (message.htmlRequestId) {
+    return `request:${message.htmlRequestId}`
+  }
+  return `pathname:${message.pathname}`
 }
 
 function isRuntimeErrorBoundary(value: unknown): boolean {

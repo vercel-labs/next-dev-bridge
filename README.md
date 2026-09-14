@@ -52,8 +52,9 @@ connect-next http://localhost:3000 --no-reconnect
 
 ## Browser API
 
-Use `observeNextDev()` inside the preview page or iframe when you want both HMR
-build state and browser runtime errors from one event stream.
+Use `observeNextDev()` inside the preview page or iframe when you need browser
+runtime fallback for Next.js versions that do not publish runtime state over
+HMR.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -139,12 +140,19 @@ const connection = connect(
     if (event.type === 'build:recovered') {
       console.log('build recovered')
     }
+
+    if (event.type === 'runtime:error') {
+      console.log(event.error.isFatal, event.error.message)
+    }
   }
 )
 ```
 
 `connect()` emits session events because it owns the websocket connection, plus
-normalized build events from the Next.js HMR stream.
+normalized build events from the Next.js HMR stream. It also emits runtime
+events automatically when Next.js publishes them. Older versions send no such
+message, so their existing build behavior is unchanged and browser integrations
+can continue using `observeNextDev()` as a runtime fallback.
 
 Stop the connection when your own process is shutting down:
 
@@ -155,12 +163,14 @@ process.once('SIGINT', () => {
 })
 ```
 
-Common build events:
+Common events:
 
 ```ts
 'build:ready'
 'build:error'
 'build:recovered'
+'runtime:error'
+'runtime:cleared'
 'observer:error'
 'session:connecting'
 'session:connected'

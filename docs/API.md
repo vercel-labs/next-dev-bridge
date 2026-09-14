@@ -9,10 +9,10 @@ import { connect } from 'next-dev-bridge'
 ```
 
 Use `observeNextDev()` from `next-dev-bridge/client` inside the preview browser
-or iframe to observe HMR build state and browser runtime errors from one event
-stream. Use the CLI for a quick terminal view. Use `connect()` from
-`next-dev-bridge` in Node when another process needs to attach to a running Next
-dev server.
+or iframe when browser runtime fallback is required. Use the CLI for a quick
+terminal view. Use `connect()` from `next-dev-bridge` in Node when another
+process needs to attach to a running Next dev server; it automatically consumes
+runtime state when Next.js publishes it.
 
 ## observeNextDev
 
@@ -191,7 +191,7 @@ need both build and runtime events.
 `observeRuntimeErrors()` captures `window.error` and `unhandledrejection`.
 `observeNextDev()` additionally passes incoming `runtimeErrors` HMR messages to
 this observer. Next-provided errors use `source: 'nextjs'`, retain the optional
-`boundary` metadata, and derive `isFatal` from the boundary kind.
+`boundary` metadata, and map Next's reported `fatal` value to `isFatal`.
 
 If you own WebSocket interception yourself, enable HMR preference and forward
 the raw message to the runtime observer:
@@ -261,7 +261,11 @@ The CLI attaches to the running dev server. It does not start Next.js for you.
 const connection = connect(next, options, listener)
 ```
 
-`connect()` opens the Next dev websocket, processes incoming HMR messages, and emits normalized events.
+`connect()` opens the Next dev websocket and processes incoming HMR messages.
+It always recognizes runtime snapshots: newer Next.js versions therefore emit
+`runtime:error` and `runtime:cleared` without browser injection, while older
+versions continue emitting the existing build and session events. No version
+configuration is required.
 
 ```ts
 import { connect } from 'next-dev-bridge'
@@ -335,7 +339,9 @@ Common event types:
 'session:error'
 ```
 
-`observeNextDev()` emits build, observer, and runtime events. `processHMR()` only emits build and observer events. `connect()` also emits session events because it owns the Node websocket connection.
+`observeNextDev()` emits build, observer, and runtime events. `processHMR()` only
+emits build and observer events. `connect()` emits session and build events, and
+also runtime events whenever they are present on the Next.js HMR stream.
 
 Next's raw `building` signal is intentionally not emitted as a public event
 because it is low-level and can fire for route/request work, not only meaningful

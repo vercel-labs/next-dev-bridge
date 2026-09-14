@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  createHmrRuntimeErrorObserver,
   createRuntimeErrorObserverScript,
   observeRuntimeErrors,
 } from '../src/runtime'
@@ -461,6 +462,60 @@ describe('observeRuntimeErrors', () => {
   })
 })
 
+describe('createHmrRuntimeErrorObserver', () => {
+  it('automatically ignores old HMR messages and aggregates runtime scopes', () => {
+    const events: any[] = []
+    const observer = createHmrRuntimeErrorObserver((event, state) => {
+      events.push({ event, state })
+    })
+
+    expect(
+      observer.handleHMRMessage(
+        JSON.stringify({ type: 'sync', errors: [], warnings: [] })
+      )
+    ).toBe(false)
+
+    observer.handleHMRMessage(
+      createHmrRuntimeState(
+        { fatal: false, message: 'first document error' },
+        '/first',
+        { clientId: 'client-1' }
+      )
+    )
+    observer.handleHMRMessage(
+      createHmrRuntimeState(
+        { fatal: true, message: 'second document error' },
+        '/second',
+        { clientId: 'client-2' }
+      )
+    )
+
+    expect(observer.getSnapshot().errors).toHaveLength(2)
+    expect(events.map(({ event }) => event.type)).toEqual([
+      'runtime:error',
+      'runtime:error',
+    ])
+
+    observer.handleHMRMessage(
+      createHmrRuntimeState(undefined, '/first', { clientId: 'client-1' })
+    )
+
+    expect(observer.getSnapshot().errors).toMatchObject([
+      { message: 'second document error', isFatal: true },
+    ])
+    expect(events).toHaveLength(2)
+
+    observer.handleHMRMessage(
+      createHmrRuntimeState(undefined, '/second', { clientId: 'client-2' })
+    )
+
+    expect(events.at(-1)).toMatchObject({
+      event: { type: 'runtime:cleared', errors: [] },
+      state: { errors: [] },
+    })
+  })
+})
+
 function createFakeWindow() {
   const listeners = new Map<string, Set<(event: any) => void>>()
   const fakeWindow = {
@@ -517,11 +572,15 @@ function createHmrRuntimeState(
     }
   },
   pathname = '/runtime-effect',
-  options: { legacy?: boolean; htmlRequestId?: string } = {}
+  options: {
+    legacy?: boolean
+    clientId?: string
+    htmlRequestId?: string
+  } = {}
 ) {
   return JSON.stringify({
     type: options.legacy ? 'runtime-error-state' : 'runtimeErrors',
-    clientId: 'client-1',
+    clientId: options.clientId || 'client-1',
     ...(options.htmlRequestId
       ? { htmlRequestId: options.htmlRequestId }
       : {}),
