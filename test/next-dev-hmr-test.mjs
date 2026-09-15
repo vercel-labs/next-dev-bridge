@@ -17,6 +17,7 @@ const HOST = '127.0.0.1'
 const DEV_URL = `http://${HOST}:${PORT}`
 const HMR_SETTLE_QUIET_MS = 1500
 const HMR_SETTLE_TIMEOUT_MS = 10000
+const HMR_SCENARIO_RETRY_MS = 5000
 const NEXT_BIN = path.join(
   REPO_ROOT,
   'node_modules',
@@ -262,18 +263,23 @@ async function runBuildErrorFlow(context) {
     'replace syntax error with a valid module missing an imported export',
     'expect HMR build:error update with import trace',
   ])
+  const isMissingExportEvent = (event) =>
+    isErrorEvent(event) &&
+    event.errors.some((error) => error.includes('Export buildErrorMessage'))
   const updated = context.waitForObserved(
-    (event) =>
-      isErrorEvent(event) &&
-      event.errors.some((error) =>
-        error.includes('Export buildErrorMessage')
-      ),
+    isMissingExportEvent,
     'missing export HMR error',
     { fromNow: true }
   )
   applyLoggedScenario('build:missing-export')
   await requestIgnoringErrors(`${DEV_URL}/build-errors`)
-  const updatedEvent = await updated
+  const stopRetrying = retryScenarioUntilObserved(
+    context,
+    isMissingExportEvent,
+    'build:missing-export',
+    `${DEV_URL}/build-errors`
+  )
+  const updatedEvent = await updated.finally(stopRetrying)
   assertFormattedErrors(updatedEvent, 'missing export')
   await waitForHmrSilence(context)
 
@@ -423,6 +429,23 @@ function requestIgnoringErrors(url) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function retryScenarioUntilObserved(context, matches, scenario, url) {
+  const retry = async () => {
+    if (context.observerEvents.some(matches)) {
+      return
+    }
+
+    console.log(`>>> [SCENARIO RETRY] ${scenario}`)
+    applyLoggedScenario(scenario)
+    await requestIgnoringErrors(url)
+  }
+  const timer = setInterval(() => {
+    retry().catch(() => {})
+  }, HMR_SCENARIO_RETRY_MS)
+
+  return () => clearInterval(timer)
 }
 
 async function waitForHmrSilence(context) {
