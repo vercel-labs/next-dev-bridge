@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  createHmrRuntimeErrorObserver,
+  createRuntimeErrorObserver,
   createRuntimeErrorObserverScript,
   observeRuntimeErrors,
 } from '../src/runtime'
 
 describe('observeRuntimeErrors', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -58,6 +61,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'error',
+        isFatal: false,
         severity: 'recoverable',
         name: 'Error',
         message: 'effect exploded',
@@ -181,6 +185,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'unhandledrejection',
+        isFatal: false,
         severity: 'recoverable',
         message: 'promise exploded',
       },
@@ -190,6 +195,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 2,
         source: 'unhandledrejection',
+        isFatal: false,
         severity: 'recoverable',
         message: 'promise exploded',
       },
@@ -223,6 +229,7 @@ describe('observeRuntimeErrors', () => {
       error: {
         id: 1,
         source: 'error',
+        isFatal: false,
         severity: 'recoverable',
         name: 'Error',
         message: 'boundary exploded',
@@ -259,6 +266,144 @@ describe('observeRuntimeErrors', () => {
     expect(events).toHaveLength(2)
     expect(events.map((event) => event.error.source)).toEqual(['error', 'error'])
     expect(events.map((event) => event.error.id)).toEqual([1, 2])
+  })
+
+  it.each([
+    {
+      boundary: { kind: 'default-global', name: 'DefaultGlobalError' },
+      isFatal: true,
+      severity: 'fatal',
+    },
+    {
+      boundary: { kind: 'custom', name: 'RouteErrorBoundary' },
+      isFatal: false,
+      severity: 'recoverable',
+    },
+    {
+      boundary: { kind: 'custom-global', name: 'GlobalError' },
+      isFatal: false,
+      severity: 'recoverable',
+    },
+    {
+      boundary: undefined,
+      isFatal: false,
+      severity: 'recoverable',
+    },
+  ] as const)(
+    'uses Next HMR runtime fatality ($severity)',
+    async ({ boundary, isFatal, severity }) => {
+      vi.useFakeTimers()
+      const fakeWindow = createFakeWindow()
+      const events: any[] = []
+      const observer = createRuntimeErrorObserver((event) => events.push(event), {
+        now: () => '2026-09-02T10:00:00.000Z',
+        preferHMR: true,
+      })
+
+      const browserError = new Error('boundary exploded')
+      fakeWindow.emit('error', {
+        error: browserError,
+        message: browserError.message,
+      })
+      expect(events).toEqual([])
+
+      observer.ingestHMR(
+        createHmrRuntimeState({
+          fatal: isFatal,
+          boundary,
+          message: browserError.message,
+        })
+      )
+
+      expect(events).toHaveLength(1)
+      expect(events[0].error).toMatchObject({
+        source: 'nextjs',
+        message: browserError.message,
+        isFatal,
+        severity,
+        filename: 'app/page.tsx',
+        line: 12,
+        column: 5,
+      })
+      expect(events[0].error.boundary).toEqual(boundary)
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(events).toHaveLength(1)
+    }
+  )
+
+  it('continues to accept the earlier runtime-error-state payload', () => {
+    createFakeWindow()
+    const events: any[] = []
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { fatal: true, message: 'legacy fatal error' },
+        '/runtime-effect',
+        { legacy: true }
+      )
+    )
+    expect(events[0].error).toMatchObject({
+      message: 'legacy fatal error',
+      isFatal: true,
+      severity: 'fatal',
+    })
+  })
+
+  it('ignores runtime snapshots produced by another document', () => {
+    createFakeWindow()
+    ;(window as any).__next_r = 'current-request'
+    const events: any[] = []
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { message: 'another document' },
+        '/runtime-effect',
+        { htmlRequestId: 'other-request' }
+      )
+    )
+    expect(events).toEqual([])
+
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { message: 'current document' },
+        '/runtime-effect',
+        { htmlRequestId: 'current-request' }
+      )
+    )
+    expect(events[0].error.message).toBe('current document')
+  })
+
+  it('clears HMR runtime state and ignores state for another pathname', () => {
+    createFakeWindow()
+    const events: any[] = []
+    const observer = createRuntimeErrorObserver((event) => events.push(event), {
+      preferHMR: true,
+    })
+
+    observer.ingestHMR(
+      createHmrRuntimeState({ message: 'other route' }, '/other')
+    )
+    expect(events).toEqual([])
+
+    observer.ingestHMR(
+      createHmrRuntimeState({ message: 'current route' })
+    )
+    observer.ingestHMR(createHmrRuntimeState())
+
+    expect(events.map((event) => event.type)).toEqual([
+      'runtime:error',
+      'runtime:cleared',
+    ])
+    expect(observer.getSnapshot()).toEqual({ errors: [] })
+    observer.ingestHMR('{invalid')
+    expect(observer.getSnapshot()).toEqual({ errors: [] })
   })
 
   it('can reset and stop listening', async () => {
@@ -311,6 +456,58 @@ describe('observeRuntimeErrors', () => {
   })
 })
 
+describe('createHmrRuntimeErrorObserver', () => {
+  it('automatically ignores old HMR messages and aggregates runtime scopes', () => {
+    const events: any[] = []
+    const observer = createHmrRuntimeErrorObserver((event, state) => {
+      events.push({ event, state })
+    })
+
+    observer.ingestHMR(
+      JSON.stringify({ type: 'sync', errors: [], warnings: [] })
+    )
+
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { fatal: false, message: 'first document error' },
+        '/first',
+        { clientId: 'client-1' }
+      )
+    )
+    observer.ingestHMR(
+      createHmrRuntimeState(
+        { fatal: true, message: 'second document error' },
+        '/second',
+        { clientId: 'client-2' }
+      )
+    )
+
+    expect(observer.getSnapshot().errors).toHaveLength(2)
+    expect(events.map(({ event }) => event.type)).toEqual([
+      'runtime:error',
+      'runtime:error',
+    ])
+
+    observer.ingestHMR(
+      createHmrRuntimeState(undefined, '/first', { clientId: 'client-1' })
+    )
+
+    expect(observer.getSnapshot().errors).toMatchObject([
+      { message: 'second document error', isFatal: true },
+    ])
+    expect(events).toHaveLength(2)
+
+    observer.ingestHMR(
+      createHmrRuntimeState(undefined, '/second', { clientId: 'client-2' })
+    )
+
+    expect(events.at(-1)).toMatchObject({
+      event: { type: 'runtime:cleared', errors: [] },
+      state: { errors: [] },
+    })
+  })
+})
+
 function createFakeWindow() {
   const listeners = new Map<string, Set<(event: any) => void>>()
   const fakeWindow = {
@@ -355,4 +552,49 @@ async function waitFor(condition: () => boolean) {
     }
     await flushAsyncHandlers()
   }
+}
+
+function createHmrRuntimeState(
+  error?: {
+    fatal?: boolean
+    message: string
+    boundary?: {
+      kind: 'default-global' | 'custom-global' | 'custom'
+      name?: string
+    }
+  },
+  pathname = '/runtime-effect',
+  options: {
+    legacy?: boolean
+    clientId?: string
+    htmlRequestId?: string
+  } = {}
+) {
+  return JSON.stringify({
+    type: options.legacy ? 'runtime-error-state' : 'runtimeErrors',
+    clientId: options.clientId || 'client-1',
+    ...(options.htmlRequestId
+      ? { htmlRequestId: options.htmlRequestId }
+      : {}),
+    pathname,
+    errors: error
+      ? [
+          {
+            type: 'runtime',
+            errorName: 'Error',
+            message: error.message,
+            ...(error.fatal !== undefined ? { fatal: error.fatal } : {}),
+            ...(error.boundary ? { boundary: error.boundary } : {}),
+            stack: [
+              {
+                file: 'app/page.tsx',
+                methodName: 'Page',
+                line: 12,
+                column: 5,
+              },
+            ],
+          },
+        ]
+      : [],
+  })
 }

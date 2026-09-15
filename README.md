@@ -7,7 +7,8 @@ errors, when those errors update, when they recover, and, in the browser, when
 runtime errors happen. It normalizes the noisy HMR transport into a smaller set
 of events that are easier to render in a CLI, iframe shell, or custom dev UI.
 
-The observer supports the HMR endpoints used by Next.js 16.2 and 16.3.
+The observer supports the HMR endpoints used by Next.js 16.2 and 16.3, and
+consumes richer runtime error state when it is available in newer releases.
 
 ## Install
 
@@ -51,8 +52,8 @@ connect-next http://localhost:3000 --no-reconnect
 
 ## Browser API
 
-Use `observeNextDev()` inside the preview page or iframe when you want both HMR
-build state and browser runtime errors from one event stream.
+Use `observeNextDev()` inside the preview page or iframe for one normalized
+connection, build, and runtime event stream.
 
 ```ts
 import { observeNextDev } from 'next-dev-bridge/client'
@@ -79,14 +80,13 @@ window.addEventListener('pagehide', () => {
 })
 ```
 
-next-dev-bridge asks Next.js to decode captured runtime errors and uses the mapped frames
-when available.
-
-The runtime observer also wraps `window.reportError()` when available. Next.js
-uses `reportError()` in development for errors caught by its implicit overlay
-and default global error boundaries, so those failures are emitted as
-`runtime:error` events with `source: 'reported-error'` without adding an app
-boundary.
+When Next.js publishes `runtimeErrors` over HMR, next-dev-bridge uses that
+source-mapped WebSocket state as the authoritative runtime source. It maps
+Next's `fatal` boolean to `isFatal` and `severity` and also preserves Next's
+boundary metadata. A `runtime:cleared` event means the producer's
+reported snapshot is empty; it does not by itself prove that the application
+rendered successfully. Older Next.js builds fall back to browser error events
+and report `isFatal: false` because they do not expose boundary metadata.
 
 For iframe runtimes that already rewrite websocket URLs, keep that rewrite and
 pass it to next-dev-bridge:
@@ -139,12 +139,19 @@ const connection = connect(
     if (event.type === 'build:recovered') {
       console.log('build recovered')
     }
+
+    if (event.type === 'runtime:error') {
+      console.log(event.error.isFatal, event.error.message)
+    }
   }
 )
 ```
 
 `connect()` emits session events because it owns the websocket connection, plus
-normalized build events from the Next.js HMR stream.
+normalized build events from the Next.js HMR stream. It also emits runtime
+events automatically when Next.js publishes them. Older versions send no such
+message, so their existing build behavior is unchanged and browser integrations
+can continue using `observeNextDev()` as a runtime fallback.
 
 Stop the connection when your own process is shutting down:
 
@@ -155,16 +162,20 @@ process.once('SIGINT', () => {
 })
 ```
 
-Common build events:
+Common events:
 
 ```ts
+'build:started'
 'build:ready'
 'build:error'
 'build:recovered'
+'runtime:error'
+'runtime:cleared'
 'observer:error'
 'session:connecting'
 'session:connected'
 'session:disconnected'
+'session:reconnected'
 'session:error'
 ```
 

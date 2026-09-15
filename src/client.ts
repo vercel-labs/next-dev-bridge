@@ -3,6 +3,7 @@ export type {
   NextDevBridgeClientEvent,
   NextDevBridgeClientEventListener,
   NextDevBridgeClientObserver,
+  NextDevBridgeClientSessionEvent,
   NextDevBridgeClientState,
   ObserveNextDevOptions,
 } from './client-observer.js'
@@ -24,6 +25,7 @@ export {
 } from './runtime.js'
 export type {
   RuntimeErrorEvent,
+  RuntimeErrorBoundary,
   RuntimeErrorInfo,
   RuntimeErrorListener,
   RuntimeErrorObserver,

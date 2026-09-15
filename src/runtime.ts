@@ -7,14 +7,24 @@ import {
 
 export type RuntimeErrorSource =
   | 'error'
+  | 'nextjs'
   | 'unhandledrejection'
 
 export type RuntimeErrorSeverity = 'fatal' | 'recoverable'
+
+export interface RuntimeErrorBoundary {
+  kind: 'default-global' | 'custom-global' | 'custom'
+  name?: string
+}
 
 export interface RuntimeErrorInfo {
   id: number
   source: RuntimeErrorSource
   severity: RuntimeErrorSeverity
+  /** Whether Next.js reported that this error reached its default global boundary. */
+  isFatal: boolean
+  /** The React error boundary reported by Next.js, when one caught the error. */
+  boundary?: RuntimeErrorBoundary
   name: string
   message: string
   stack: string
@@ -66,11 +76,21 @@ export interface RuntimeErrorObserver {
   getSnapshot(): RuntimeErrorState
 }
 
+interface HmrRuntimeErrorObserver extends RuntimeErrorObserver {
+  ingestHMR(raw: unknown): void
+}
+
+interface InternalRuntimeErrorObserverOptions
+  extends RuntimeErrorObserverOptions {
+  preferHMR?: boolean
+}
+
 interface RuntimeErrorDraft {
   source: RuntimeErrorSource
   name: string
   message: string
   stack: string
+  boundary?: RuntimeErrorBoundary
   filename?: string
   line?: number
   column?: number
@@ -80,6 +100,13 @@ export function observeRuntimeErrors(
   listener?: RuntimeErrorListener,
   options: RuntimeErrorObserverOptions = {}
 ): RuntimeErrorObserver {
+  return createRuntimeErrorObserver(listener, options)
+}
+
+export function createRuntimeErrorObserver(
+  listener?: RuntimeErrorListener,
+  options: InternalRuntimeErrorObserverOptions = {}
+): HmrRuntimeErrorObserver {
   if (typeof window === 'undefined') {
     return createNoopRuntimeObserver()
   }
@@ -87,12 +114,15 @@ export function observeRuntimeErrors(
   const state: RuntimeErrorState = {
     errors: [],
   }
+  const pendingBrowserErrors = new Set<ReturnType<typeof setTimeout>>()
+  let browserFallbackActive = !options.preferHMR
   let nextId = 1
 
   async function recordError(draft: RuntimeErrorDraft) {
     const entry: RuntimeErrorInfo = {
       ...draft,
       id: nextId++,
+      isFatal: false,
       severity: getRuntimeErrorSeverity(),
       at: timestamp(options),
     }
@@ -116,11 +146,11 @@ export function observeRuntimeErrors(
   }
 
   function onError(event: ErrorEvent) {
-    void recordError(fromErrorEvent(event))
+    captureBrowserError(fromErrorEvent(event))
   }
 
   function onUnhandledRejection(event: PromiseRejectionEvent) {
-    void recordError(fromUnhandledRejection(event))
+    captureBrowserError(fromUnhandledRejection(event))
   }
 
   window.addEventListener('error', onError)
@@ -130,8 +160,10 @@ export function observeRuntimeErrors(
     stop() {
       window.removeEventListener('error', onError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
+      clearPendingBrowserErrors()
     },
     reset() {
+      clearPendingBrowserErrors()
       state.errors = []
       emit({ type: 'runtime:cleared', errors: [] }, state)
       return cloneRuntimeState(state)
@@ -139,6 +171,100 @@ export function observeRuntimeErrors(
     getSnapshot() {
       return cloneRuntimeState(state)
     },
+    ingestHMR(raw) {
+      const message = parseHmrRuntimeErrorState(raw)
+      if (!message) {
+        return
+      }
+
+      if (message.pathname !== getWindowPathname()) {
+        return
+      }
+
+      const requestId = getWindowHmrRequestId()
+      if (
+        typeof message.htmlRequestId === 'string' &&
+        requestId !== undefined &&
+        message.htmlRequestId !== requestId
+      ) {
+        return
+      }
+
+      browserFallbackActive = false
+      clearPendingBrowserErrors()
+      replaceWithHmrRuntimeState(message.errors)
+    },
+  }
+
+  function captureBrowserError(draft: RuntimeErrorDraft) {
+    if (browserFallbackActive) {
+      void recordError(draft)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      pendingBrowserErrors.delete(timer)
+      browserFallbackActive = true
+      void recordError(draft)
+    }, 1000)
+    pendingBrowserErrors.add(timer)
+  }
+
+  function clearPendingBrowserErrors() {
+    for (const timer of pendingBrowserErrors) {
+      clearTimeout(timer)
+    }
+    pendingBrowserErrors.clear()
+  }
+
+  function replaceWithHmrRuntimeState(errors: HmrRuntimeError[]) {
+    const previousByKey = new Map(
+      state.errors.map((error) => [getRuntimeErrorKey(error), error])
+    )
+    const nextErrors = errors.map((error) => {
+      const draft = fromHmrRuntimeError(error)
+      const isFatal = getHmrRuntimeErrorFatality(error)
+      const key = getRuntimeErrorKey({
+        ...draft,
+        isFatal,
+      })
+      const previous = previousByKey.get(key)
+      return previous || {
+        ...draft,
+        id: nextId++,
+        isFatal,
+        severity: getRuntimeErrorSeverity(isFatal),
+        at: timestamp(options),
+      }
+    })
+
+    const previousKeys = state.errors.map(getRuntimeErrorKey)
+    const nextKeys = nextErrors.map(getRuntimeErrorKey)
+    if (JSON.stringify(previousKeys) === JSON.stringify(nextKeys)) {
+      return
+    }
+
+    const previousKeySet = new Set(previousKeys)
+    state.errors = nextErrors
+    if (nextErrors.length === 0) {
+      if (previousKeys.length > 0) {
+        emit({ type: 'runtime:cleared', errors: [] }, state)
+      }
+      return
+    }
+
+    for (const error of nextErrors) {
+      if (!previousKeySet.has(getRuntimeErrorKey(error))) {
+        emit(
+          {
+            type: 'runtime:error',
+            error: cloneRuntimeError(error),
+            errors: cloneRuntimeErrors(nextErrors),
+          },
+          state
+        )
+      }
+    }
   }
 
   function emit(event: RuntimeErrorEvent, nextState: RuntimeErrorState) {
@@ -168,7 +294,7 @@ export function createRuntimeErrorObserverScript(
   )});`
 }
 
-function createNoopRuntimeObserver(): RuntimeErrorObserver {
+function createNoopRuntimeObserver(): HmrRuntimeErrorObserver {
   const emptyState = { errors: [] }
   return {
     stop() {},
@@ -178,6 +304,260 @@ function createNoopRuntimeObserver(): RuntimeErrorObserver {
     getSnapshot() {
       return emptyState
     },
+    ingestHMR() {},
+  }
+}
+
+interface HmrRuntimeError {
+  type: string
+  errorName: string
+  message: string
+  fatal?: boolean
+  boundary?: RuntimeErrorBoundary
+  stack: Array<{
+    file: string
+    methodName: string
+    line: number | null
+    column: number | null
+  }>
+}
+
+interface HmrRuntimeErrorState {
+  clientId?: string
+  pathname: string
+  htmlRequestId?: string | null
+  errors: HmrRuntimeError[]
+}
+
+/**
+ * Observe runtime snapshots already published by Next.js over HMR.
+ *
+ * This has no browser dependency, so the Node connection can consume newer
+ * runtime messages while older Next.js versions continue to be build-only.
+ */
+export function createHmrRuntimeErrorObserver(
+  listener?: RuntimeErrorListener,
+  options: Pick<RuntimeErrorObserverOptions, 'now'> = {}
+): HmrRuntimeErrorObserver {
+  const state: RuntimeErrorState = { errors: [] }
+  const errorsByScope = new Map<string, RuntimeErrorInfo[]>()
+  let nextId = 1
+
+  return {
+    stop() {},
+    reset() {
+      errorsByScope.clear()
+      state.errors = []
+      emit({ type: 'runtime:cleared', errors: [] })
+      return cloneRuntimeState(state)
+    },
+    getSnapshot() {
+      return cloneRuntimeState(state)
+    },
+    ingestHMR(raw) {
+      const message = parseHmrRuntimeErrorState(raw)
+      if (!message) {
+        return
+      }
+
+      const scope = getHmrRuntimeErrorScope(message)
+      const previousErrors = errorsByScope.get(scope) || []
+      const previousByKey = new Map(
+        previousErrors.map((error) => [getRuntimeErrorKey(error), error])
+      )
+      const nextScopeErrors = message.errors.map((error) => {
+        const draft = fromHmrRuntimeError(error)
+        const isFatal = getHmrRuntimeErrorFatality(error)
+        const key = getRuntimeErrorKey({ ...draft, isFatal })
+        return previousByKey.get(key) || {
+          ...draft,
+          id: nextId++,
+          isFatal,
+          severity: getRuntimeErrorSeverity(isFatal),
+          at: timestamp(options),
+        }
+      })
+
+      if (nextScopeErrors.length > 0) {
+        errorsByScope.set(scope, nextScopeErrors)
+      } else {
+        errorsByScope.delete(scope)
+      }
+
+      const previousAggregate = state.errors
+      const previousScopedKeys = new Set(
+        previousErrors.map((error) => getRuntimeErrorKey(error))
+      )
+      state.errors = [...errorsByScope.values()].flat()
+
+      if (state.errors.length === 0) {
+        if (previousAggregate.length > 0) {
+          emit({ type: 'runtime:cleared', errors: [] })
+        }
+        return
+      }
+
+      for (const error of nextScopeErrors) {
+        if (!previousScopedKeys.has(getRuntimeErrorKey(error))) {
+          emit({
+            type: 'runtime:error',
+            error: cloneRuntimeError(error),
+            errors: cloneRuntimeErrors(state.errors),
+          })
+        }
+      }
+    },
+  }
+
+  function emit(event: RuntimeErrorEvent) {
+    listener?.(event, cloneRuntimeState(state))
+  }
+}
+
+function parseHmrRuntimeErrorState(raw: unknown): HmrRuntimeErrorState | null {
+  let message = raw
+  if (typeof raw === 'string') {
+    try {
+      message = JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  if (
+    !isRecord(message) ||
+    (message.type !== 'runtimeErrors' &&
+      message.type !== 'runtime-error-state') ||
+    typeof message.pathname !== 'string' ||
+    !Array.isArray(message.errors)
+  ) {
+    return null
+  }
+
+  const isLegacyMessage = message.type === 'runtime-error-state'
+  if (
+    message.htmlRequestId !== undefined &&
+    message.htmlRequestId !== null &&
+    typeof message.htmlRequestId !== 'string'
+  ) {
+    return null
+  }
+  if (message.clientId !== undefined && typeof message.clientId !== 'string') {
+    return null
+  }
+
+  const errors = message.errors.flatMap((error): HmrRuntimeError[] => {
+    if (
+      !isRecord(error) ||
+      typeof error.type !== 'string' ||
+      typeof error.errorName !== 'string' ||
+      typeof error.message !== 'string' ||
+      (error.fatal !== undefined && typeof error.fatal !== 'boolean') ||
+      (isLegacyMessage && typeof error.fatal !== 'boolean') ||
+      !isRuntimeErrorBoundary(error.boundary) ||
+      !Array.isArray(error.stack)
+    ) {
+      return []
+    }
+
+    const stack = error.stack.flatMap((frame) => {
+      if (
+        !isRecord(frame) ||
+        typeof frame.file !== 'string' ||
+        typeof frame.methodName !== 'string' ||
+        (frame.line !== null && typeof frame.line !== 'number') ||
+        (frame.column !== null && typeof frame.column !== 'number')
+      ) {
+        return []
+      }
+      return [{
+        file: frame.file,
+        methodName: frame.methodName,
+        line: frame.line,
+        column: frame.column,
+      }]
+    })
+
+    if (stack.length !== error.stack.length) {
+      return []
+    }
+
+    return [{
+      type: error.type,
+      errorName: error.errorName,
+      message: error.message,
+      ...(typeof error.fatal === 'boolean' ? { fatal: error.fatal } : {}),
+      ...(error.boundary !== undefined
+        ? { boundary: { ...error.boundary } }
+        : {}),
+      stack,
+    }]
+  })
+
+  if (errors.length !== message.errors.length) {
+    return null
+  }
+
+  return {
+    ...(typeof message.clientId === 'string'
+      ? { clientId: message.clientId }
+      : {}),
+    pathname: message.pathname,
+    ...(message.htmlRequestId !== undefined
+      ? { htmlRequestId: message.htmlRequestId }
+      : {}),
+    errors,
+  }
+}
+
+function getHmrRuntimeErrorScope(message: HmrRuntimeErrorState) {
+  if (message.clientId) {
+    return `client:${message.clientId}`
+  }
+  if (message.htmlRequestId) {
+    return `request:${message.htmlRequestId}`
+  }
+  return `pathname:${message.pathname}`
+}
+
+function isRuntimeErrorBoundary(value: unknown): boolean {
+  if (value === undefined) {
+    return true
+  }
+  return (
+    isRecord(value) &&
+    (value.kind === 'default-global' ||
+      value.kind === 'custom-global' ||
+      value.kind === 'custom') &&
+    (value.name === undefined || typeof value.name === 'string')
+  )
+}
+
+function getHmrRuntimeErrorFatality(error: HmrRuntimeError) {
+  return error.fatal ?? (error.boundary?.kind === 'default-global')
+}
+
+function fromHmrRuntimeError(error: HmrRuntimeError): RuntimeErrorDraft {
+  const firstFrame = error.stack[0]
+  const stack = [
+    `${error.errorName}: ${error.message}`,
+    ...error.stack.map((frame) => {
+      const location = `${frame.file}${frame.line === null ? '' : `:${frame.line}`}${frame.column === null ? '' : `:${frame.column}`}`
+      return `    at ${frame.methodName || '<anonymous>'} (${location})`
+    }),
+  ].join('\n')
+
+  return {
+    source: 'nextjs',
+    name: error.errorName,
+    message: error.message,
+    stack,
+    ...(error.boundary !== undefined
+      ? { boundary: { ...error.boundary } }
+      : {}),
+    filename: firstFrame?.file,
+    line: firstFrame?.line ?? undefined,
+    column: firstFrame?.column ?? undefined,
   }
 }
 
@@ -276,8 +656,38 @@ function timestamp(options: RuntimeErrorObserverOptions) {
   return String(value)
 }
 
-function getRuntimeErrorSeverity(): RuntimeErrorSeverity {
-  return 'recoverable'
+function getRuntimeErrorSeverity(isFatal?: boolean): RuntimeErrorSeverity {
+  return isFatal ? 'fatal' : 'recoverable'
+}
+
+function getRuntimeErrorKey(
+  error: Pick<RuntimeErrorInfo, 'name' | 'message' | 'stack'> & {
+    isFatal?: boolean
+    boundary?: RuntimeErrorBoundary
+  }
+) {
+  return `${error.name}\u0000${error.message}\u0000${error.stack}\u0000${String(error.isFatal)}\u0000${JSON.stringify(error.boundary)}`
+}
+
+function getWindowPathname() {
+  try {
+    return window.location.pathname || new URL(window.location.href).pathname
+  } catch {
+    return ''
+  }
+}
+
+function getWindowHmrRequestId() {
+  try {
+    const requestId = (window as typeof window & { __next_r?: unknown }).__next_r
+    return typeof requestId === 'string' ? requestId : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function cloneRuntimeState(state: RuntimeErrorState): RuntimeErrorState {
@@ -293,6 +703,7 @@ function cloneRuntimeErrors(errors: RuntimeErrorInfo[]) {
 function cloneRuntimeError(error: RuntimeErrorInfo): RuntimeErrorInfo {
   return {
     ...error,
+    boundary: error.boundary ? { ...error.boundary } : undefined,
     mapped: error.mapped
       ? {
           ...error.mapped,
@@ -375,6 +786,7 @@ function runtimeErrorObserverScript(rawOptions: RuntimeErrorObserverScriptOption
     const entry = {
       ...draft,
       id: nextId++,
+      isFatal: false,
       severity: getRuntimeErrorSeverity(),
       at: new Date().toISOString(),
     } as RuntimeErrorInfo

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { processHMR } from '../src/client'
 
 describe('processHMR', () => {
-  it('tracks low-level compiling state without emitting an event', () => {
+  it('reports when a build starts', () => {
     const handleHMR = processHMR({
       now: () => '2026-04-25T00:00:00.000Z',
     })
@@ -17,12 +17,14 @@ describe('processHMR', () => {
     )
 
     expect(typeof handleHMR).toBe('function')
-    expect(result.events).toHaveLength(0)
+    expect(result.events).toEqual([
+      { type: 'build:started', internalType: 'building', cycle: 1 },
+    ])
     expect(result.state.phase).toBe('compiling')
     expect(result.state.building).toBe(true)
     expect(result.state.buildCycle).toBe(1)
     expect(handleHMR.getSnapshot().phase).toBe('compiling')
-    expect(seen).toEqual([])
+    expect(seen).toEqual([{ type: 'build:started', phase: 'compiling' }])
   })
 
   it('reports build errors and recovery', () => {

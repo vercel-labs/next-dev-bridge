@@ -4,6 +4,7 @@ import { observeNextDev } from '../src/client'
 
 describe('observeNextDev', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -26,13 +27,16 @@ describe('observeNextDev', () => {
         }),
       })
 
-      expect(events).toHaveLength(1)
-      expect(events[0].event).toMatchObject({
+      expect(events.map(({ event }) => event.type)).toEqual([
+        'session:connecting',
+        'build:error',
+      ])
+      expect(events[1].event).toMatchObject({
         type: 'build:error',
         hash: 'error-hash',
       })
-      expect(events[0].state.build.hasErrors).toBe(true)
-      expect(events[0].state.runtime.errors).toEqual([])
+      expect(events[1].state.build.hasErrors).toBe(true)
+      expect(events[1].state.runtime.errors).toEqual([])
 
       observer.stop()
       expect(fakeWindow.WebSocket).toBe(fakeWindow.NativeWebSocket)
@@ -40,6 +44,7 @@ describe('observeNextDev', () => {
   )
 
   it('emits source-mapped runtime errors', async () => {
+    vi.useFakeTimers()
     const fakeWindow = createFakeWindow()
     const events: any[] = []
     const error = new Error('runtime exploded')
@@ -77,6 +82,7 @@ describe('observeNextDev', () => {
       lineno: 14,
       colno: 7,
     })
+    await vi.advanceTimersByTimeAsync(1000)
     await waitFor(() => events.length === 1)
 
     expect(events[0].event).toMatchObject({
@@ -99,6 +105,198 @@ describe('observeNextDev', () => {
       },
     })
     expect(events[0].state.runtime.errors).toHaveLength(1)
+  })
+
+  it('consumes and clears Next 16.4 runtimeErrors websocket snapshots', () => {
+    const fakeWindow = createFakeWindow()
+    ;(fakeWindow as any).__next_r = 'request-1'
+    const events: any[] = []
+    observeNextDev((event, state) => events.push({ event, state }), {
+      now: () => '2026-09-02T10:00:00.000Z',
+    })
+    const socket = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'runtimeErrors',
+        clientId: 'client-1',
+        pathname: '/runtime-effect',
+        htmlRequestId: 'request-1',
+        errors: [
+          {
+            type: 'runtime',
+            errorName: 'Error',
+            message: 'root boundary exploded',
+            fatal: true,
+            boundary: {
+              kind: 'default-global',
+              name: 'DefaultGlobalError',
+            },
+            stack: [
+              {
+                file: 'app/runtime-effect/page.tsx',
+                methodName: 'Page',
+                line: 8,
+                column: 3,
+              },
+            ],
+          },
+        ],
+      }),
+    })
+
+    expect(events.map(({ event }) => event.type)).toEqual([
+      'session:connecting',
+      'runtime:error',
+    ])
+    expect(events[1]).toMatchObject({
+      event: {
+        type: 'runtime:error',
+        error: {
+          source: 'nextjs',
+          message: 'root boundary exploded',
+          isFatal: true,
+          severity: 'fatal',
+          boundary: {
+            kind: 'default-global',
+            name: 'DefaultGlobalError',
+          },
+        },
+      },
+      state: {
+        runtime: {
+          errors: [{ isFatal: true, severity: 'fatal' }],
+        },
+      },
+    })
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'runtimeErrors',
+        clientId: 'client-1',
+        pathname: '/runtime-effect',
+        htmlRequestId: 'request-1',
+        errors: [],
+      }),
+    })
+
+    expect(events.at(-1)).toMatchObject({
+      event: { type: 'runtime:cleared', errors: [] },
+      state: { runtime: { errors: [] } },
+    })
+  })
+
+  it('reports the lifecycle of the intercepted HMR connection', () => {
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    const observer = observeNextDev((event, state) =>
+      events.push({ event, connection: state.build.connection })
+    )
+
+    const first = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+    first.emit('open', {})
+    first.emit('close', {
+      code: 1006,
+      reason: '',
+      wasClean: false,
+    })
+
+    fakeWindow.emit('offline', {})
+    const second = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+    second.emit('open', {})
+
+    expect(events).toEqual([
+      {
+        event: {
+          type: 'session:connecting',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+        },
+        connection: 'connecting',
+      },
+      {
+        event: {
+          type: 'session:connected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+        },
+        connection: 'connected',
+      },
+      {
+        event: {
+          type: 'session:disconnected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 1,
+          opened: true,
+          code: 1006,
+          reason: '',
+          wasClean: false,
+        },
+        connection: 'disconnected',
+      },
+      {
+        event: {
+          type: 'session:connecting',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 2,
+        },
+        connection: 'connecting',
+      },
+      {
+        event: {
+          type: 'session:reconnected',
+          url: 'ws://localhost/_next/hmr',
+          attempt: 2,
+          missedUpdates: true,
+        },
+        connection: 'connected',
+      },
+    ])
+
+    observer.stop()
+  })
+
+  it('falls back to browser runtime errors without HMR runtime state', async () => {
+    vi.useFakeTimers()
+    const fakeWindow = createFakeWindow()
+    const events: any[] = []
+    observeNextDev((event, state) => events.push({ event, state }))
+    const socket = new fakeWindow.WebSocket('ws://localhost/_next/hmr')
+
+    socket.emit('message', {
+      data: JSON.stringify({
+        type: 'sync',
+        hash: 'legacy-next',
+        errors: [],
+        warnings: [],
+      }),
+    })
+    events.length = 0
+
+    const error = new Error('legacy browser runtime error')
+    fakeWindow.emit('error', { error, message: error.message })
+    expect(events).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      event: {
+        type: 'runtime:error',
+        error: {
+          source: 'error',
+          message: error.message,
+          isFatal: false,
+          severity: 'recoverable',
+        },
+      },
+      state: {
+        runtime: {
+          errors: [{ message: error.message, severity: 'recoverable' }],
+        },
+      },
+    })
+    expect(events[0].event.error.isFatal).toBe(false)
   })
 })
 

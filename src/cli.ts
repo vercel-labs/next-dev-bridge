@@ -157,6 +157,14 @@ function printHumanEvent(event, args) {
       log(formatBuildError(event))
       printErrors(event.errors)
       return
+    case 'runtime:error':
+      log(
+        `>>> [RUNTIME ${event.error.isFatal ? 'FATAL' : 'ERROR'}] ${event.error.message}`
+      )
+      return
+    case 'runtime:cleared':
+      log('>>> [RUNTIME RECOVERED]')
+      return
     case 'session:reconnect-abandoned':
       log(`>>> [RECONNECT ABANDONED] attempts=${event.attempts}`)
       return
